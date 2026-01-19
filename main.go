@@ -12,20 +12,11 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-// CANFrame represents a parsed CAN bus frame
-type CANFrame struct {
-	Timestamp  string
-	ID         string
-	IsExtended bool
-	Direction  string
-	Bus        int
-	Length     int
-	Data       []byte
-}
-
 func main() {
 	unaccountedOnly := flag.Bool("unaccounted-only", false, "only display frames that are not CBOR or heartbeat/keep-alive")
 	hideUnaccounted := flag.Bool("hide-unaccounted", false, "hide unaccounted frames, show only decoded CBOR and heartbeat frames")
+	hideAccounted := flag.Bool("hide-accounted", false, "hide accounted frames (CBOR and heartbeat), show only unaccounted frames")
+	groupByID := flag.Bool("group-by-id", false, "group frames by CAN ID, then sort by timestamp within each group")
 	flag.Parse()
 
 	// Buffer to accumulate CBOR data from multiple CAN frames
@@ -39,6 +30,7 @@ func main() {
 	var cborMessageCount int
 	var heartbeatCount int
 	var totalFramesProcessed int
+	var allFrames []*FrameInfo // For grouping mode
 
 	// Main Loop: Read Stdin
 	scanner := bufio.NewScanner(os.Stdin)
@@ -50,6 +42,11 @@ func main() {
 			return "Unaccounted frames only"
 		} else if *hideUnaccounted {
 			return "Decoded frames only (hiding unaccounted)"
+		} else if *hideAccounted {
+			return "Unaccounted frames only (hiding accounted)"
+		}
+		if *groupByID {
+			return "All frames (grouped by ID)"
 		}
 		return "All frames"
 	}())
@@ -106,7 +103,9 @@ func main() {
 		totalFramesProcessed++
 
 		// Track capture timestamps
+		var timestampFloat float64
 		if ts, err := parseTimestamp(line, isCSV); err == nil {
+			timestampFloat = ts
 			if ts < minTimestamp {
 				minTimestamp = ts
 			}
@@ -131,9 +130,71 @@ func main() {
 		isStartFrame := (header & 0xF0) == 0xA0
 		isContinuation := (header & 0xF0) == 0x10
 
+		// Determine frame type
+		var frameType string
+		var isCBOR bool
+		var isHeartbeat bool
+
+		if isStartFrame {
+			frameType = "START"
+			isCBOR = true
+		} else if isContinuation {
+			frameType = "CONT"
+			isCBOR = true
+		} else {
+			// Check if heartbeat
+			isHeartbeat = checkIfHeartbeat(frame)
+			if isHeartbeat {
+				frameType = "HEARTBEAT"
+			} else {
+				frameType = "UNACCOUNTED"
+			}
+		}
+
+		// Store frame info if grouping
+		if *groupByID {
+			allFrames = append(allFrames, &FrameInfo{
+				Frame:          frame,
+				TimestampFloat: timestampFloat,
+				Header:         header,
+				FrameType:      frameType,
+				IsHeartbeat:    isHeartbeat,
+				IsCBOR:         isCBOR,
+			})
+		}
+
+		// Skip immediate display if grouping
+		if *groupByID {
+			// Still need to process CBOR for accurate counts
+			if isStartFrame {
+				cborBuffer = make([]byte, 0)
+				cborBuffer = append(cborBuffer, payload...)
+				lastCanID = frame.ID
+				frameCount = 1
+			} else if isContinuation {
+				cborBuffer = append(cborBuffer, payload...)
+				frameCount++
+			}
+
+			if isCBOR && len(cborBuffer) > 0 {
+				bufReader := bytes.NewReader(cborBuffer)
+				dec := cbor.NewDecoder(bufReader)
+				var item interface{}
+				if dec.Decode(&item) == nil {
+					cborMessageCount++
+					cborBuffer = cborBuffer[len(cborBuffer)-bufReader.Len():]
+				}
+			}
+
+			if isHeartbeat {
+				heartbeatCount++
+			}
+			continue
+		}
+
 		// --- VANMOOF FRAMING LOGIC ---
 		if isStartFrame {
-			if !*unaccountedOnly {
+			if !*unaccountedOnly && !*hideAccounted {
 				printFrameHeader(frame, header, "START")
 			}
 			// New message starting - reset buffer
@@ -147,7 +208,7 @@ func main() {
 			frameCount = 1
 			fmt.Printf("   🆕 New message started, buffer: %X\n", cborBuffer)
 		} else if isContinuation {
-			if !*unaccountedOnly {
+			if !*unaccountedOnly && !*hideAccounted {
 				printFrameHeader(frame, header, "CONT")
 			}
 			// Continuation of current message
@@ -157,9 +218,9 @@ func main() {
 				frameCount, cborBuffer, len(cborBuffer))
 		} else {
 			// Not CBOR framing - analyze as raw data
-			showVerbose := !*unaccountedOnly && !*hideUnaccounted
+			showVerbose := !*unaccountedOnly && !*hideUnaccounted && !*hideAccounted
 			isHeartbeat := analyzeRawFrame(frame, showVerbose)
-			if !isHeartbeat && *unaccountedOnly {
+			if !isHeartbeat && (*unaccountedOnly || *hideAccounted) {
 				printFrameHeader(frame, header, "UNACCOUNTED")
 			}
 			if isHeartbeat {
@@ -202,6 +263,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Display grouped output if requested
+	if *groupByID && len(allFrames) > 0 {
+		displayGroupedFrames(allFrames, *hideAccounted, *hideUnaccounted)
+	}
+
 	// Display capture summary
 	if captureStarted && maxTimestamp > minTimestamp {
 		durationSeconds := maxTimestamp - minTimestamp
@@ -220,125 +286,4 @@ func main() {
 		fmt.Printf("   Total Frames Processed: %d\n", totalFramesProcessed)
 		fmt.Println("===================================================")
 	}
-}
-
-// analyzeRawFrame analyzes non-CBOR frames for patterns and returns true if heartbeat detected
-func analyzeRawFrame(frame *CANFrame, verbose bool) bool {
-	isHeartbeat := false
-
-	// Analyze specific CAN IDs for known patterns
-	switch {
-	case frame.ID == "14609460":
-		// This ID appears frequently
-		if verbose && len(frame.Data) >= 4 {
-			fmt.Printf("   📊 Telemetry? Bytes[1:4]: %02X %02X %02X %02X\n",
-				frame.Data[0], frame.Data[1], frame.Data[2], frame.Data[3])
-		}
-	case strings.HasPrefix(frame.ID, "01111"):
-		// IDs starting with 01111 seem to be heartbeats (all zeros)
-		allZero := true
-		for _, b := range frame.Data {
-			if b != 0 {
-				allZero = false
-				break
-			}
-		}
-		if allZero {
-			if verbose {
-				fmt.Printf("   💓 Heartbeat/Keep-alive (all zeros)\n")
-			}
-			isHeartbeat = true
-		}
-	case frame.ID == "18209820":
-		if verbose && len(frame.Data) >= 1 {
-			fmt.Printf("   🔢 Status byte: %02X\n", frame.Data[0])
-		}
-	}
-
-	return isHeartbeat
-}
-
-// decodeAndPrint recursively prints CBOR structures with indentation
-func decodeAndPrint(item interface{}, indent int) {
-	prefix := strings.Repeat("  ", indent)
-
-	switch v := item.(type) {
-	case []uint8:
-		fmt.Printf("%sType: Byte String (%d bytes)\n", prefix, len(v))
-		fmt.Printf("%sHex: %X\n", prefix, v)
-		// ASCII interpretation
-		ascii := make([]byte, len(v))
-		for i, b := range v {
-			if b >= 32 && b < 127 {
-				ascii[i] = b
-			} else {
-				ascii[i] = '.'
-			}
-		}
-		fmt.Printf("%sASCII: %s\n", prefix, string(ascii))
-
-		// VanMoof specific: Check if this could be a nonce/IV (9 bytes)
-		if len(v) == 9 {
-			fmt.Printf("%s💡 Possible Nonce/IV (9 bytes)\n", prefix)
-		}
-
-	case string:
-		fmt.Printf("%sType: Text String (%d chars)\n", prefix, len(v))
-		fmt.Printf("%sValue: %q\n", prefix, v)
-		// Check for binary data disguised as text
-		hasBinary := false
-		for _, r := range v {
-			if r < 32 || r > 126 {
-				hasBinary = true
-				break
-			}
-		}
-		if hasBinary {
-			fmt.Printf("%s⚠️ Contains non-printable bytes (possibly encrypted data)\n", prefix)
-			fmt.Printf("%sRaw Hex: %X\n", prefix, []byte(v))
-		}
-
-	case []interface{}:
-		fmt.Printf("%sType: Array (length %d)\n", prefix, len(v))
-		for i, elem := range v {
-			fmt.Printf("%s  [%d]:\n", prefix, i)
-			decodeAndPrint(elem, indent+2)
-		}
-
-	case map[interface{}]interface{}:
-		fmt.Printf("%sType: Map (%d entries)\n", prefix, len(v))
-		for k, val := range v {
-			fmt.Printf("%s  Key: %v\n", prefix, k)
-			fmt.Printf("%s  Value:\n", prefix)
-			decodeAndPrint(val, indent+2)
-		}
-
-	case uint64:
-		fmt.Printf("%sType: Unsigned Int\n", prefix)
-		fmt.Printf("%sValue: %d (0x%X)\n", prefix, v, v)
-
-	case int64:
-		fmt.Printf("%sType: Signed Int\n", prefix)
-		fmt.Printf("%sValue: %d\n", prefix, v)
-
-	case bool:
-		fmt.Printf("%sType: Boolean\n", prefix)
-		fmt.Printf("%sValue: %v\n", prefix, v)
-
-	case nil:
-		fmt.Printf("%sType: Null\n", prefix)
-
-	default:
-		fmt.Printf("%sType: %T\n", prefix, v)
-		fmt.Printf("%sValue: %v\n", prefix, v)
-	}
-}
-
-func printFrameHeader(frame *CANFrame, header byte, frameType string) {
-	idType := "Std"
-	if frame.IsExtended {
-		idType = "Ext"
-	}
-	fmt.Printf("📍 ID:0x%s(%s) Hdr:%02X [%s] Data[%d]: %X\n",
-		frame.ID, idType, header, frameType, len(frame.Data), frame.Data)
 }
