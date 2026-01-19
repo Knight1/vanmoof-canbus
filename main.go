@@ -249,7 +249,7 @@ func main() {
 				// Decode and display the structure
 				decodeAndPrint(item, 0)
 
-				fmt.Println("===================================================\n")
+				fmt.Println("===================================================")
 
 				// Remove consumed bytes
 				cborBuffer = cborBuffer[bytesConsumed:]
