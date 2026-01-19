@@ -7,18 +7,41 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/fxamacker/cbor/v2"
 )
 
+const Version = "0.1.0"
+
 func main() {
+	version := flag.Bool("version", false, "show version information")
 	unaccountedOnly := flag.Bool("unaccounted-only", false, "only display frames that are not CBOR or heartbeat/keep-alive")
 	hideUnaccounted := flag.Bool("hide-unaccounted", false, "hide unaccounted frames, show only decoded CBOR and heartbeat frames")
 	hideAccounted := flag.Bool("hide-accounted", false, "hide accounted frames (CBOR and heartbeat), show only unaccounted frames")
 	groupByID := flag.Bool("group-by-id", false, "group frames by CAN ID, then sort by timestamp within each group")
+	compareMode := flag.Bool("compare", false, "compare unaccounted frames across multiple files (provide file paths as arguments)")
 	flag.Parse()
+
+	if *version {
+		fmt.Println("vanmoof-canbus version", Version)
+		fmt.Printf("OS: %s, Arch: %s, Go: %s, CPUs: %d, Compiler: %s\n", runtime.GOOS, runtime.GOARCH, runtime.Version(), runtime.NumCPU(), runtime.Compiler)
+		return
+	}
+
+	// Compare mode: process multiple files
+	if *compareMode {
+		files := flag.Args()
+		if len(files) < 2 {
+			fmt.Println("Error: Compare mode requires at least 2 file paths as arguments")
+			fmt.Println("Usage: canbus -compare file1.csv file2.csv [file3.csv file4.csv ...]")
+			os.Exit(1)
+		}
+		compareFiles(files)
+		return
+	}
 
 	// Buffer to accumulate CBOR data from multiple CAN frames
 	var cborBuffer []byte
@@ -295,4 +318,122 @@ func main() {
 		fmt.Printf("   Total Frames Processed: %d\n", totalFramesProcessed)
 		fmt.Println("===================================================")
 	}
+}
+
+// compareFiles processes multiple files and compares their unaccounted frames
+func compareFiles(filePaths []string) {
+	fileFrames := make(map[string][]*FrameInfo)
+
+	for _, filePath := range filePaths {
+		fmt.Printf("Processing %s...\n", filePath)
+		frames := processFile(filePath)
+		fileFrames[filePath] = frames
+	}
+
+	CompareUnaccountedFrames(fileFrames)
+}
+
+// processFile reads a file and returns all frame info
+func processFile(filePath string) []*FrameInfo {
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Printf("Error opening %s: %v", filePath, err)
+		return nil
+	}
+	defer file.Close()
+
+	var allFrames []*FrameInfo
+	var isCSV bool
+	lineNum := 0
+	sequenceNum := 0
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		lineNum++
+
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+
+		var frame *CANFrame
+		var parseErr error
+
+		// Detect format on first data line
+		if lineNum == 1 {
+			if strings.Contains(line, "Time Stamp") || strings.Contains(line, "ID,Extended") {
+				isCSV = true
+				continue
+			} else if strings.Contains(line, "#") {
+				isCSV = false
+			}
+		}
+
+		// Parse based on format
+		if isCSV || strings.Contains(line, ",") && !strings.Contains(line, "#") {
+			isCSV = true
+			fields := strings.Split(line, ",")
+			frame, parseErr = parseCSVLine(fields)
+		} else {
+			frame, parseErr = parseCandumpLine(line)
+		}
+
+		if parseErr != nil || frame == nil || len(frame.Data) == 0 {
+			continue
+		}
+
+		sequenceNum++
+
+		// Parse timestamp
+		var timestampFloat float64
+		if frame.Timestamp != "" {
+			if ts, err := strconv.ParseFloat(frame.Timestamp, 64); err == nil {
+				if isCSV {
+					timestampFloat = ts / 1_000_000
+				} else {
+					timestampFloat = ts
+				}
+			}
+		}
+
+		// Extract header and determine frame type
+		header := frame.Data[0]
+		isStartFrame := (header & 0xF0) == 0xA0
+		isContinuation := (header & 0xF0) == 0x10
+
+		var frameType string
+		var isCBOR bool
+		var isHeartbeat bool
+
+		if isStartFrame {
+			frameType = "START"
+			isCBOR = true
+		} else if isContinuation {
+			frameType = "CONT"
+			isCBOR = true
+		} else {
+			isHeartbeat = checkIfHeartbeat(frame)
+			if isHeartbeat {
+				frameType = "HEARTBEAT"
+			} else {
+				frameType = "UNACCOUNTED"
+			}
+		}
+
+		allFrames = append(allFrames, &FrameInfo{
+			Frame:          frame,
+			TimestampFloat: timestampFloat,
+			Header:         header,
+			FrameType:      frameType,
+			IsHeartbeat:    isHeartbeat,
+			IsCBOR:         isCBOR,
+			SequenceNum:    sequenceNum,
+		})
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("Error reading %s: %v", filePath, err)
+	}
+
+	return allFrames
 }
