@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/fxamacker/cbor/v2"
@@ -104,16 +105,23 @@ func main() {
 
 		// Track capture timestamps
 		var timestampFloat float64
-		if ts, err := parseTimestamp(line, isCSV); err == nil {
-			timestampFloat = ts
-			if ts < minTimestamp {
-				minTimestamp = ts
-			}
-			if ts > maxTimestamp {
-				maxTimestamp = ts
-			}
-			if !captureStarted {
-				captureStarted = true
+		if frame.Timestamp != "" {
+			if ts, err := strconv.ParseFloat(frame.Timestamp, 64); err == nil {
+				// CSV timestamps are in microseconds, convert to seconds
+				if isCSV {
+					timestampFloat = ts / 1_000_000
+				} else {
+					timestampFloat = ts
+				}
+				if timestampFloat < minTimestamp {
+					minTimestamp = timestampFloat
+				}
+				if timestampFloat > maxTimestamp {
+					maxTimestamp = timestampFloat
+				}
+				if !captureStarted {
+					captureStarted = true
+				}
 			}
 		}
 
@@ -160,6 +168,7 @@ func main() {
 				FrameType:      frameType,
 				IsHeartbeat:    isHeartbeat,
 				IsCBOR:         isCBOR,
+				SequenceNum:    totalFramesProcessed,
 			})
 		}
 

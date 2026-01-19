@@ -41,6 +41,10 @@ func displayGroupedFrames(frames []*FrameInfo, hideAccounted, hideUnaccounted bo
 
 		// Sort by timestamp within each group
 		sort.Slice(frameList, func(i, j int) bool {
+			if frameList[i].TimestampFloat == frameList[j].TimestampFloat {
+				// If timestamps are equal, sort by sequence number to maintain order
+				return frameList[i].SequenceNum < frameList[j].SequenceNum
+			}
 			return frameList[i].TimestampFloat < frameList[j].TimestampFloat
 		})
 
@@ -65,7 +69,7 @@ func displayGroupedFrames(frames []*FrameInfo, hideAccounted, hideUnaccounted bo
 
 		for _, f := range filteredFrames {
 			tsStr := strconv.FormatFloat(f.TimestampFloat, 'f', 6, 64)
-			fmt.Printf("  [%s] ", tsStr)
+			fmt.Printf("  [%s #%d] ", tsStr, f.SequenceNum)
 			printFrameHeader(f.Frame, f.Header, f.FrameType)
 		}
 	}

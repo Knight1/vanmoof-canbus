@@ -19,4 +19,5 @@ type FrameInfo struct {
 	FrameType      string
 	IsHeartbeat    bool
 	IsCBOR         bool
+	SequenceNum    int // For maintaining order when timestamps are identical
 }
