@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -23,6 +24,9 @@ type CANFrame struct {
 }
 
 func main() {
+	unaccountedOnly := flag.Bool("unaccounted-only", false, "only display frames that are not CBOR or heartbeat/keep-alive")
+	flag.Parse()
+
 	// Buffer to accumulate CBOR data from multiple CAN frames
 	var cborBuffer []byte
 	var lastCanID string
@@ -40,6 +44,12 @@ func main() {
 	fmt.Println("VanMoof CAN Bus Decoder")
 	fmt.Println("Supports: CSV format (SavvyCAN) and candump format")
 	fmt.Println("Protocol: Ax = Start Frame, 1x = Continuation")
+	fmt.Printf("Mode: %s\n", func() string {
+		if *unaccountedOnly {
+			return "Unaccounted frames only"
+		}
+		return "All frames"
+	}())
 	fmt.Println("---------------------------------------------------")
 
 	lineNum := 0
@@ -118,26 +128,11 @@ func main() {
 		isStartFrame := (header & 0xF0) == 0xA0
 		isContinuation := (header & 0xF0) == 0x10
 
-		// Display frame info
-		idType := "Std"
-		if frame.IsExtended {
-			idType = "Ext"
-		}
-
-		frameType := "DATA"
-		if isStartFrame {
-			frameType = "START"
-		} else if isContinuation {
-			frameType = "CONT"
-		} else if header == 0x00 {
-			frameType = "ZERO"
-		}
-
-		fmt.Printf("📍 ID:0x%s(%s) Hdr:%02X [%s] Data[%d]: %X\n",
-			frame.ID, idType, header, frameType, len(frame.Data), frame.Data)
-
 		// --- VANMOOF FRAMING LOGIC ---
 		if isStartFrame {
+			if !*unaccountedOnly {
+				printFrameHeader(frame, header, "START")
+			}
 			// New message starting - reset buffer
 			if len(cborBuffer) > 0 {
 				fmt.Printf("   ⚠️ Discarding incomplete buffer (%d bytes): %X\n",
@@ -149,6 +144,9 @@ func main() {
 			frameCount = 1
 			fmt.Printf("   🆕 New message started, buffer: %X\n", cborBuffer)
 		} else if isContinuation {
+			if !*unaccountedOnly {
+				printFrameHeader(frame, header, "CONT")
+			}
 			// Continuation of current message
 			cborBuffer = append(cborBuffer, payload...)
 			frameCount++
@@ -156,9 +154,14 @@ func main() {
 				frameCount, cborBuffer, len(cborBuffer))
 		} else {
 			// Not CBOR framing - analyze as raw data
-			if analyzeRawFrame(frame) {
+			isHeartbeat := analyzeRawFrame(frame, !*unaccountedOnly)
+			if !isHeartbeat && *unaccountedOnly {
+				printFrameHeader(frame, header, "UNACCOUNTED")
+			}
+			if isHeartbeat {
 				heartbeatCount++
 			}
+			// Not CBOR framing - analyze as raw data
 			continue
 		}
 
@@ -206,25 +209,25 @@ func main() {
 		fmt.Printf("   From: %.6f to %.6f seconds\n", minTimestamp, maxTimestamp)
 		fmt.Printf("   CBOR Messages Found: %d\n", cborMessageCount)
 		fmt.Printf("   Heartbeat/Keep-Alive Frames: %d\n", heartbeatCount)
-			unaccountedFrames := totalFramesProcessed - cborMessageCount - heartbeatCount
-			if unaccountedFrames < 0 {
-				unaccountedFrames = 0
-			}
-			fmt.Printf("   Unaccounted Frames: %d\n", unaccountedFrames)
-			fmt.Printf("   Total Frames Processed: %d\n", totalFramesProcessed)
+		unaccountedFrames := totalFramesProcessed - cborMessageCount - heartbeatCount
+		if unaccountedFrames < 0 {
+			unaccountedFrames = 0
+		}
+		fmt.Printf("   Unaccounted Frames: %d\n", unaccountedFrames)
+		fmt.Printf("   Total Frames Processed: %d\n", totalFramesProcessed)
 		fmt.Println("===================================================")
 	}
 }
 
 // analyzeRawFrame analyzes non-CBOR frames for patterns and returns true if heartbeat detected
-func analyzeRawFrame(frame *CANFrame) bool {
+func analyzeRawFrame(frame *CANFrame, verbose bool) bool {
 	isHeartbeat := false
 
 	// Analyze specific CAN IDs for known patterns
 	switch {
 	case frame.ID == "14609460":
 		// This ID appears frequently
-		if len(frame.Data) >= 4 {
+		if verbose && len(frame.Data) >= 4 {
 			fmt.Printf("   📊 Telemetry? Bytes[1:4]: %02X %02X %02X %02X\n",
 				frame.Data[0], frame.Data[1], frame.Data[2], frame.Data[3])
 		}
@@ -238,11 +241,13 @@ func analyzeRawFrame(frame *CANFrame) bool {
 			}
 		}
 		if allZero {
-			fmt.Printf("   💓 Heartbeat/Keep-alive (all zeros)\n")
+			if verbose {
+				fmt.Printf("   💓 Heartbeat/Keep-alive (all zeros)\n")
+			}
 			isHeartbeat = true
 		}
 	case frame.ID == "18209820":
-		if len(frame.Data) >= 1 {
+		if verbose && len(frame.Data) >= 1 {
 			fmt.Printf("   🔢 Status byte: %02X\n", frame.Data[0])
 		}
 	}
@@ -324,4 +329,13 @@ func decodeAndPrint(item interface{}, indent int) {
 		fmt.Printf("%sType: %T\n", prefix, v)
 		fmt.Printf("%sValue: %v\n", prefix, v)
 	}
+}
+
+func printFrameHeader(frame *CANFrame, header byte, frameType string) {
+	idType := "Std"
+	if frame.IsExtended {
+		idType = "Ext"
+	}
+	fmt.Printf("📍 ID:0x%s(%s) Hdr:%02X [%s] Data[%d]: %X\n",
+		frame.ID, idType, header, frameType, len(frame.Data), frame.Data)
 }
