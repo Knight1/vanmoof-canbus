@@ -27,10 +27,13 @@ func main() {
 	var cborBuffer []byte
 	var lastCanID string
 	var frameCount int
-	var firstTimestamp float64
-	var lastTimestamp float64
+	var minTimestamp float64 = float64(^uint64(0) >> 1) // Max float
+	var maxTimestamp float64 = 0
 	var isCSV bool
 	var captureStarted bool
+	var cborMessageCount int
+	var heartbeatCount int
+	var totalFramesProcessed int
 
 	// Main Loop: Read Stdin
 	scanner := bufio.NewScanner(os.Stdin)
@@ -87,13 +90,19 @@ func main() {
 			continue
 		}
 
+		totalFramesProcessed++
+
 		// Track capture timestamps
 		if ts, err := parseTimestamp(line, isCSV); err == nil {
+			if ts < minTimestamp {
+				minTimestamp = ts
+			}
+			if ts > maxTimestamp {
+				maxTimestamp = ts
+			}
 			if !captureStarted {
-				firstTimestamp = ts
 				captureStarted = true
 			}
-			lastTimestamp = ts
 		}
 
 		// Extract header byte and payload
@@ -147,7 +156,9 @@ func main() {
 				frameCount, cborBuffer, len(cborBuffer))
 		} else {
 			// Not CBOR framing - analyze as raw data
-			analyzeRawFrame(frame)
+			if analyzeRawFrame(frame) {
+				heartbeatCount++
+			}
 			continue
 		}
 
@@ -162,6 +173,7 @@ func main() {
 			if err == nil {
 				// Successfully decoded!
 				bytesConsumed := len(cborBuffer) - bufReader.Len()
+				cborMessageCount++
 
 				fmt.Println("\n===================================================")
 				fmt.Printf("✅ COMPLETE CBOR MESSAGE (CAN ID: 0x%s, %d frames, %d bytes)\n",
@@ -185,19 +197,29 @@ func main() {
 	}
 
 	// Display capture summary
-	if captureStarted && lastTimestamp > firstTimestamp {
-		durationMs := (lastTimestamp - firstTimestamp) * 1000
-		readableDuration := formatDuration(durationMs)
+	if captureStarted && maxTimestamp > minTimestamp {
+		durationSeconds := maxTimestamp - minTimestamp
+		readableDuration := formatDuration(durationSeconds)
 		fmt.Println("\n===================================================")
 		fmt.Printf("📊 Capture Summary\n")
-		fmt.Printf("   Duration: %s (%.2f ms)\n", readableDuration, durationMs)
-		fmt.Printf("   From: %f to %f\n", firstTimestamp, lastTimestamp)
+		fmt.Printf("   Duration: %s (%.3f sec)\n", readableDuration, durationSeconds)
+		fmt.Printf("   From: %.6f to %.6f seconds\n", minTimestamp, maxTimestamp)
+		fmt.Printf("   CBOR Messages Found: %d\n", cborMessageCount)
+		fmt.Printf("   Heartbeat/Keep-Alive Frames: %d\n", heartbeatCount)
+			unaccountedFrames := totalFramesProcessed - cborMessageCount - heartbeatCount
+			if unaccountedFrames < 0 {
+				unaccountedFrames = 0
+			}
+			fmt.Printf("   Unaccounted Frames: %d\n", unaccountedFrames)
+			fmt.Printf("   Total Frames Processed: %d\n", totalFramesProcessed)
 		fmt.Println("===================================================")
 	}
 }
 
-// analyzeRawFrame analyzes non-CBOR frames for patterns
-func analyzeRawFrame(frame *CANFrame) {
+// analyzeRawFrame analyzes non-CBOR frames for patterns and returns true if heartbeat detected
+func analyzeRawFrame(frame *CANFrame) bool {
+	isHeartbeat := false
+
 	// Analyze specific CAN IDs for known patterns
 	switch {
 	case frame.ID == "14609460":
@@ -217,12 +239,15 @@ func analyzeRawFrame(frame *CANFrame) {
 		}
 		if allZero {
 			fmt.Printf("   💓 Heartbeat/Keep-alive (all zeros)\n")
+			isHeartbeat = true
 		}
 	case frame.ID == "18209820":
 		if len(frame.Data) >= 1 {
 			fmt.Printf("   🔢 Status byte: %02X\n", frame.Data[0])
 		}
 	}
+
+	return isHeartbeat
 }
 
 // decodeAndPrint recursively prints CBOR structures with indentation
