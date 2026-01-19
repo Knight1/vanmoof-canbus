@@ -25,6 +25,7 @@ type CANFrame struct {
 
 func main() {
 	unaccountedOnly := flag.Bool("unaccounted-only", false, "only display frames that are not CBOR or heartbeat/keep-alive")
+	hideUnaccounted := flag.Bool("hide-unaccounted", false, "hide unaccounted frames, show only decoded CBOR and heartbeat frames")
 	flag.Parse()
 
 	// Buffer to accumulate CBOR data from multiple CAN frames
@@ -47,6 +48,8 @@ func main() {
 	fmt.Printf("Mode: %s\n", func() string {
 		if *unaccountedOnly {
 			return "Unaccounted frames only"
+		} else if *hideUnaccounted {
+			return "Decoded frames only (hiding unaccounted)"
 		}
 		return "All frames"
 	}())
@@ -154,14 +157,14 @@ func main() {
 				frameCount, cborBuffer, len(cborBuffer))
 		} else {
 			// Not CBOR framing - analyze as raw data
-			isHeartbeat := analyzeRawFrame(frame, !*unaccountedOnly)
+			showVerbose := !*unaccountedOnly && !*hideUnaccounted
+			isHeartbeat := analyzeRawFrame(frame, showVerbose)
 			if !isHeartbeat && *unaccountedOnly {
 				printFrameHeader(frame, header, "UNACCOUNTED")
 			}
 			if isHeartbeat {
 				heartbeatCount++
 			}
-			// Not CBOR framing - analyze as raw data
 			continue
 		}
 
