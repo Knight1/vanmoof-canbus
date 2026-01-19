@@ -3,11 +3,9 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/fxamacker/cbor/v2"
@@ -24,98 +22,15 @@ type CANFrame struct {
 	Data       []byte
 }
 
-// parseCSVLine parses a CSV line in the format:
-// Time Stamp,ID,Extended,Dir,Bus,LEN,D1,D2,D3,D4,D5,D6,D7,D8
-func parseCSVLine(fields []string) (*CANFrame, error) {
-	if len(fields) < 14 {
-		return nil, fmt.Errorf("not enough fields: got %d, need 14", len(fields))
-	}
-
-	frame := &CANFrame{
-		Timestamp:  fields[0],
-		ID:         fields[1],
-		IsExtended: strings.ToLower(fields[2]) == "true",
-		Direction:  fields[3],
-	}
-
-	// Parse Bus
-	bus, err := strconv.Atoi(fields[4])
-	if err == nil {
-		frame.Bus = bus
-	}
-
-	// Parse Length
-	length, err := strconv.Atoi(fields[5])
-	if err != nil {
-		return nil, fmt.Errorf("invalid length: %v", err)
-	}
-	frame.Length = length
-
-	// Parse Data bytes (D1-D8)
-	frame.Data = make([]byte, 0, 8)
-	for i := 0; i < 8 && i < length; i++ {
-		hexStr := strings.TrimSpace(fields[6+i])
-		if hexStr == "" || hexStr == "00" && i >= length {
-			continue
-		}
-		b, err := strconv.ParseUint(hexStr, 16, 8)
-		if err != nil {
-			continue
-		}
-		frame.Data = append(frame.Data, byte(b))
-	}
-
-	return frame, nil
-}
-
-// parseCandumpLine extracts CAN ID and payload from candump format
-// Format: (timestamp) interface ID#PAYLOAD
-func parseCandumpLine(line string) (*CANFrame, error) {
-	// Find the '#' separator
-	idxHash := strings.Index(line, "#")
-	if idxHash == -1 {
-		return nil, fmt.Errorf("no # separator found")
-	}
-
-	// Extract ID part (everything before #)
-	idPart := line[:idxHash]
-	idPart = strings.TrimSpace(idPart)
-
-	// Remove timestamps like (1234.567890)
-	if idx := strings.LastIndex(idPart, ")"); idx != -1 {
-		idPart = idPart[idx+1:]
-	}
-	idPart = strings.TrimSpace(idPart)
-
-	// Remove interface name (vcan0, can0, etc.)
-	if idx := strings.LastIndex(idPart, " "); idx != -1 {
-		idPart = idPart[idx+1:]
-	}
-
-	canID := strings.TrimSpace(idPart)
-
-	// Extract and decode payload (everything after #)
-	payloadHex := line[idxHash+1:]
-	payloadHex = strings.ReplaceAll(payloadHex, " ", "")
-
-	payload, err := hex.DecodeString(payloadHex)
-	if err != nil {
-		return nil, err
-	}
-
-	return &CANFrame{
-		ID:         canID,
-		IsExtended: len(canID) > 3,
-		Data:       payload,
-		Length:     len(payload),
-	}, nil
-}
-
 func main() {
 	// Buffer to accumulate CBOR data from multiple CAN frames
 	var cborBuffer []byte
 	var lastCanID string
 	var frameCount int
+	var firstTimestamp float64
+	var lastTimestamp float64
+	var isCSV bool
+	var captureStarted bool
 
 	// Main Loop: Read Stdin
 	scanner := bufio.NewScanner(os.Stdin)
@@ -124,7 +39,6 @@ func main() {
 	fmt.Println("Protocol: Ax = Start Frame, 1x = Continuation")
 	fmt.Println("---------------------------------------------------")
 
-	isCSV := false
 	lineNum := 0
 
 	for scanner.Scan() {
@@ -173,13 +87,22 @@ func main() {
 			continue
 		}
 
+		// Track capture timestamps
+		if ts, err := parseTimestamp(line, isCSV); err == nil {
+			if !captureStarted {
+				firstTimestamp = ts
+				captureStarted = true
+			}
+			lastTimestamp = ts
+		}
+
 		// Extract header byte and payload
 		header := frame.Data[0]
 		payload := frame.Data[1:]
 
 		// VanMoof Protocol Analysis:
 		// Header byte high nibble indicates frame type:
-		// - 0x8x/0x9x = Possibly data frames (seen in your CSV)
+		// - 0x8x/0x9x = Possibly data frames
 		// - 0xAx (e.g., A2) = Start of new CBOR message
 		// - 0x1x (e.g., 11) = Continuation frame
 		// - 0x0x = Could be status/heartbeat
@@ -260,6 +183,17 @@ func main() {
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
+
+	// Display capture summary
+	if captureStarted && lastTimestamp > firstTimestamp {
+		durationMs := (lastTimestamp - firstTimestamp) * 1000
+		readableDuration := formatDuration(durationMs)
+		fmt.Println("\n===================================================")
+		fmt.Printf("📊 Capture Summary\n")
+		fmt.Printf("   Duration: %s (%.2f ms)\n", readableDuration, durationMs)
+		fmt.Printf("   From: %f to %f\n", firstTimestamp, lastTimestamp)
+		fmt.Println("===================================================")
+	}
 }
 
 // analyzeRawFrame analyzes non-CBOR frames for patterns
@@ -267,7 +201,7 @@ func analyzeRawFrame(frame *CANFrame) {
 	// Analyze specific CAN IDs for known patterns
 	switch {
 	case frame.ID == "14609460":
-		// This ID appears frequently in your data
+		// This ID appears frequently
 		if len(frame.Data) >= 4 {
 			fmt.Printf("   📊 Telemetry? Bytes[1:4]: %02X %02X %02X %02X\n",
 				frame.Data[0], frame.Data[1], frame.Data[2], frame.Data[3])
