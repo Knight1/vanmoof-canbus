@@ -114,7 +114,7 @@ Main CAN Bus (1 Mbps, no hardware filters)
  |-- modem (0x83)          Cellular connectivity
  |-- motor_sensor (0x84)   Speed/cadence sensing
  |-- elock (0x85)          Electronic lock mechanism
- |-- user_ecu (0x86)       Main user controller (largest firmware)
+ |-- user_ecu (0x86)       Main user controller
  |-- frontlight (0x87)     Front light controller
  |-- rearlight (0x88)      Rear light controller
  |-- eshifter (0x91)       Electronic gear shifter
