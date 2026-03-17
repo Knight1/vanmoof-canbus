@@ -14,7 +14,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 func main() {
 	version := flag.Bool("version", false, "show version information")
@@ -23,11 +23,40 @@ func main() {
 	hideAccounted := flag.Bool("hide-accounted", false, "hide accounted frames (CBOR and heartbeat), show only unaccounted frames")
 	groupByID := flag.Bool("group-by-id", false, "group frames by CAN ID, then sort by timestamp within each group")
 	compareMode := flag.Bool("compare", false, "compare unaccounted frames across multiple files (provide file paths as arguments)")
+	showDevices := flag.Bool("devices", false, "print the SA5 CAN bus device table and exit")
+	showProtocol := flag.Bool("protocol", false, "print the SA5 CAN bus protocol summary and exit")
+	showCANIDs := flag.Bool("canids", false, "print all CAN IDs and exit")
+	decodeID := flag.String("decode-id", "", "decode a CAN ID (hex, e.g. 018F808F)")
 	flag.Parse()
 
 	if *version {
 		fmt.Println("vanmoof-canbus version", Version)
 		fmt.Printf("OS: %s, Arch: %s, Go: %s, CPUs: %d, Compiler: %s\n", runtime.GOOS, runtime.GOARCH, runtime.Version(), runtime.NumCPU(), runtime.Compiler)
+		return
+	}
+
+	if *showDevices {
+		PrintDeviceTable()
+		return
+	}
+
+	if *showProtocol {
+		PrintProtocolSummary()
+		return
+	}
+
+	if *showCANIDs {
+		PrintAllCANIDs()
+		return
+	}
+
+	if *decodeID != "" {
+		decoded, err := ParseCANIDString(*decodeID)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println(decoded)
 		return
 	}
 
@@ -58,9 +87,10 @@ func main() {
 
 	// Main Loop: Read Stdin
 	scanner := bufio.NewScanner(os.Stdin)
-	fmt.Println("VanMoof CAN Bus Decoder")
+	fmt.Println("VanMoof SA5 CAN Bus Decoder")
 	fmt.Println("Supports: CSV format (SavvyCAN) and candump format")
-	fmt.Println("Protocol: Ax = Start Frame, 1x = Continuation")
+	fmt.Println("Protocol: Ax=Start, 1x=Continuation | Bus: 1Mbps, 12 devices")
+	fmt.Println("Use --devices, --protocol, or --canids for reference info")
 	fmt.Printf("Mode: %s\n", func() string {
 		if *unaccountedOnly {
 			return "Unaccounted frames only"

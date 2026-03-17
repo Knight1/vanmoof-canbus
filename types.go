@@ -19,5 +19,6 @@ type FrameInfo struct {
 	FrameType      string
 	IsHeartbeat    bool
 	IsCBOR         bool
-	SequenceNum    int // For maintaining order when timestamps are identical
+	SequenceNum    int            // For maintaining order when timestamps are identical
+	WireInfo       *WireCANIDInfo // Protocol analysis of the on-wire CAN ID
 }

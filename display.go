@@ -7,14 +7,31 @@ import (
 	"strings"
 )
 
-// printFrameHeader prints a formatted frame header with metadata
+// printFrameHeader prints a formatted frame header with metadata.
+// For UNACCOUNTED frames, appends inline CBOR decode if the payload is valid CBOR.
 func printFrameHeader(frame *CANFrame, header byte, frameType string) {
 	idType := "Std"
 	if frame.IsExtended {
 		idType = "Ext"
 	}
-	fmt.Printf("📍 ID:0x%s(%s) Hdr:%02X [%s] Data[%d]: %X\n",
-		frame.ID, idType, header, frameType, len(frame.Data), frame.Data)
+
+	// Add protocol annotations if available
+	info := AnalyzeWireCANID(frame.ID)
+	annotation := ""
+	if len(info.Annotations) > 0 {
+		annotation = " {" + strings.Join(info.Annotations, ", ") + "}"
+	}
+
+	// For non-framed messages, try CBOR decode of full data
+	cborStr := ""
+	if frameType == "UNACCOUNTED" {
+		if item, ok := tryRawCBORDecode(frame.Data); ok {
+			cborStr = " -> CBOR: " + formatCBORInline(item)
+		}
+	}
+
+	fmt.Printf("ID:0x%s(%s) Hdr:%02X [%s] Data[%d]: %X%s%s\n",
+		frame.ID, idType, header, frameType, len(frame.Data), frame.Data, annotation, cborStr)
 }
 
 // displayGroupedFrames displays frames grouped by CAN ID and sorted by timestamp
@@ -33,7 +50,7 @@ func displayGroupedFrames(frames []*FrameInfo, hideAccounted, hideUnaccounted bo
 	sort.Strings(ids)
 
 	fmt.Println("\n===================================================")
-	fmt.Println("📋 FRAMES GROUPED BY CAN ID")
+	fmt.Println("FRAMES GROUPED BY CAN ID")
 	fmt.Println("===================================================")
 
 	for _, id := range ids {
@@ -42,7 +59,6 @@ func displayGroupedFrames(frames []*FrameInfo, hideAccounted, hideUnaccounted bo
 		// Sort by timestamp within each group
 		sort.Slice(frameList, func(i, j int) bool {
 			if frameList[i].TimestampFloat == frameList[j].TimestampFloat {
-				// If timestamps are equal, sort by sequence number to maintain order
 				return frameList[i].SequenceNum < frameList[j].SequenceNum
 			}
 			return frameList[i].TimestampFloat < frameList[j].TimestampFloat
@@ -64,13 +80,24 @@ func displayGroupedFrames(frames []*FrameInfo, hideAccounted, hideUnaccounted bo
 			continue
 		}
 
-		fmt.Printf("\n🔖 CAN ID: 0x%s (%d frames)\n", id, len(filteredFrames))
+		// Add protocol annotation to group header
+		info := AnalyzeWireCANID(id)
+		annotation := ""
+		if len(info.Annotations) > 0 {
+			annotation = " [" + strings.Join(info.Annotations, ", ") + "]"
+		}
+
+		fmt.Printf("\nCAN ID: 0x%s (%d frames)%s\n", id, len(filteredFrames), annotation)
 		fmt.Println(strings.Repeat("-", 60))
 
 		for _, f := range filteredFrames {
 			tsStr := strconv.FormatFloat(f.TimestampFloat, 'f', 6, 64)
 			fmt.Printf("  [%s #%d] ", tsStr, f.SequenceNum)
 			printFrameHeader(f.Frame, f.Header, f.FrameType)
+			// Show ASCII for unaccounted frames with printable content
+			if f.FrameType == "UNACCOUNTED" && hasPrintableASCII(f.Frame.Data, 3) {
+				fmt.Printf("      ASCII: %s\n", asciiInterpretation(f.Frame.Data))
+			}
 		}
 	}
 
