@@ -15,7 +15,7 @@ go build -v -ldflags="-w -s" -mod=vendor ./...
 
 ## Usage
 
-Parse a CSV file containing CAN frame data:
+Parse a CAN dump file:
 
 ```bash
 ./canbus < input.log
@@ -35,6 +35,32 @@ Parse a CSV file containing CAN frame data:
 | `--hide-unaccounted` | Hide unaccounted frames |
 | `--hide-accounted` | Hide CBOR and heartbeat frames |
 | `--compare FILE...` | Compare unaccounted frames across multiple files |
+
+### Examples
+
+```bash
+# Decode a capture
+./canbus < dumps/bikelocked.log
+
+# Show only unrecognized frames
+./canbus --unaccounted-only < dumps/startup_from_app.log
+
+# Print the device address table
+./canbus --devices
+
+# Print the full protocol reference
+./canbus --protocol
+
+# List all CAN IDs
+./canbus --canids
+
+# Decode a specific CAN ID
+./canbus --decode-id 018F808F
+
+# Compare unaccounted frames across captures
+./canbus --compare dumps/bikelocked.log dumps/startup_from_app.log
+```
+
 ## VanMoof SA5 CAN Bus Protocol
 
 ### Bus Configuration
