@@ -83,6 +83,7 @@ func main() {
 	var cborMessageCount int
 	var heartbeatCount int
 	var totalFramesProcessed int
+	var stdFramesSkipped int
 	var allFrames []*FrameInfo // For grouping mode
 
 	// Main Loop: Read Stdin
@@ -151,6 +152,15 @@ func main() {
 		}
 
 		if frame == nil || len(frame.Data) == 0 {
+			continue
+		}
+
+		// Warn about standard 11-bit CAN IDs (we only support 29-bit extended)
+		if !frame.IsExtended {
+			if stdFramesSkipped == 0 {
+				fmt.Printf("Warning: standard 11-bit CAN IDs detected (e.g. 0x%s) — only 29-bit extended IDs are supported, skipping\n", frame.ID)
+			}
+			stdFramesSkipped++
 			continue
 		}
 
@@ -346,6 +356,9 @@ func main() {
 		}
 		fmt.Printf("   Unaccounted Frames: %d\n", unaccountedFrames)
 		fmt.Printf("   Total Frames Processed: %d\n", totalFramesProcessed)
+		if stdFramesSkipped > 0 {
+			fmt.Printf("   Standard 11-bit Frames Skipped: %d\n", stdFramesSkipped)
+		}
 		fmt.Println("===================================================")
 	}
 }
@@ -409,6 +422,11 @@ func processFile(filePath string) []*FrameInfo {
 		}
 
 		if parseErr != nil || frame == nil || len(frame.Data) == 0 {
+			continue
+		}
+
+		// Skip standard 11-bit CAN IDs
+		if !frame.IsExtended {
 			continue
 		}
 

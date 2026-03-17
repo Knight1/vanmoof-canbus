@@ -52,7 +52,7 @@ func parseCSVLine(fields []string) (*CANFrame, error) {
 }
 
 // parseCandumpLine extracts CAN ID and payload from candump format
-// Format: (timestamp) interface ID#PAYLOAD
+// Format: (timestamp) interface ID#PAYLOAD [flags]
 func parseCandumpLine(line string) (*CANFrame, error) {
 	// Find the '#' separator
 	idxHash := strings.Index(line, "#")
@@ -63,6 +63,14 @@ func parseCandumpLine(line string) (*CANFrame, error) {
 	// Extract ID part (everything before #)
 	idPart := line[:idxHash]
 	idPart = strings.TrimSpace(idPart)
+
+	// Extract timestamp from (1234.567890)
+	var timestamp string
+	if start := strings.Index(idPart, "("); start != -1 {
+		if end := strings.Index(idPart, ")"); end != -1 && end > start {
+			timestamp = idPart[start+1 : end]
+		}
+	}
 
 	// Remove timestamps like (1234.567890)
 	if idx := strings.LastIndex(idPart, ")"); idx != -1 {
@@ -77,18 +85,29 @@ func parseCandumpLine(line string) (*CANFrame, error) {
 
 	canID := strings.TrimSpace(idPart)
 
-	// Extract and decode payload (everything after #)
+	// Extract payload (everything after #), strip trailing flags like " R"
 	payloadHex := line[idxHash+1:]
-	payloadHex = strings.ReplaceAll(payloadHex, " ", "")
+	// Only keep valid hex characters (candump may have trailing flags)
+	cleanHex := strings.Map(func(r rune) rune {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F') {
+			return r
+		}
+		return -1
+	}, payloadHex)
 
-	payload, err := hex.DecodeString(payloadHex)
-	if err != nil {
-		return nil, err
+	var payload []byte
+	if len(cleanHex) > 0 {
+		var err error
+		payload, err = hex.DecodeString(cleanHex)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &CANFrame{
 		ID:         canID,
 		IsExtended: len(canID) > 3,
+		Timestamp:  timestamp,
 		Data:       payload,
 		Length:     len(payload),
 	}, nil
