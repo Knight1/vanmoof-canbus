@@ -21,13 +21,20 @@ Parse a CSV file containing CAN frame data:
 ./canbus < input.log
 ```
 
-## VanMoof Protocol
+### Flags
 
-The VanMoof CAN bus protocol uses a framing mechanism to transmit multi-frame CBOR-encoded messages. Understanding the header byte is critical for proper message reassembly.
-
-### Header Byte Structure
-
-The first byte of each CAN frame is a header byte that indicates the frame type. The high nibble (upper 4 bits) determines the frame type:
+| Flag | Description |
+|---|---|
+| `--version` | Show version information |
+| `--devices` | Print the SA5 CAN bus device table and exit |
+| `--protocol` | Print the CAN bus protocol summary and exit |
+| `--canids` | Print all CAN IDs and exit |
+| `--decode-id HEX` | Decode a CAN ID (e.g. `018F808F`) |
+| `--group-by-id` | Group frames by CAN ID, sorted by timestamp |
+| `--unaccounted-only` | Show only frames that are not CBOR or heartbeat |
+| `--hide-unaccounted` | Hide unaccounted frames |
+| `--hide-accounted` | Hide CBOR and heartbeat frames |
+| `--compare FILE...` | Compare unaccounted frames across multiple files |
 
 | Header Range | Type | Description |
 |---|---|---|
