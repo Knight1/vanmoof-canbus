@@ -134,3 +134,40 @@ Devices with full bus access (11 handlers): motor_sensor, elock, user_ecu, front
 Devices with limited bus access (7 handlers): imx8_bridge, power_control
 
 The charger operates on a separate CAN bus segment communicating only with device 0x8D.
+
+## Capturing CAN Bus Data
+
+### Hardware
+
+You need a CAN bus adapter that supports **1 Mbps** and **29-bit extended IDs**. The **MCP2518FD** (CAN FD SPI controller) is recommended — commonly available on breakout boards like the "CANBed FD", CANable, Adafruit MCP2518FD. A simple MCP2515 will also work since the bus uses classic CAN framing but you need a specific Quarz (at least 20MHz) on the PCB. Most AliExpress PCB uses way less and with them you do not get 1Mbits on the bus.
+
+**Wiring to the bike:**
+
+Connect CAN_H and CAN_L from the adapter to the bike's CAN bus. A convenient tap point is a hidden connector between on the right side of the bike near the pedal under a cover.  
+The rumor is that this was/is for a powerbank. But I use it to connect to the bike without removing anything.    
+A termination resistor is needed when you connect only one device directly to the adapter like the Battery.
+
+### Linux / Raspberry Pi
+
+The MCP2518FD works via SPI with the `mcp251xfd` kernel driver. On a Raspberry Pi, add to `/boot/config.txt`:
+
+```
+dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=25
+```
+
+Then bring up the interface and capture:
+
+```bash
+# install can tools
+sudo apt install can-utils
+
+# Set up the CAN interface at 1 Mbps
+sudo ip link set can0 up type can bitrate 1000000
+
+# Capture to file using candump (from can-utils)
+candump -L can0 > capture.log
+
+# Or capture with timestamps
+candump -ta can0 > capture.log
+```
+
