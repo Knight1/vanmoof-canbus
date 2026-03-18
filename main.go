@@ -76,7 +76,7 @@ func main() {
 	var cborBuffer []byte
 	var lastCanID string
 	var frameCount int
-	var minTimestamp float64 = float64(^uint64(0) >> 1) // Max float
+	var minTimestamp = math.MaxFloat64
 	var maxTimestamp float64 = 0
 	var isCSV bool
 	var captureStarted bool
