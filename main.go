@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -27,6 +28,10 @@ func main() {
 	showProtocol := flag.Bool("protocol", false, "print the SA5 CAN bus protocol summary and exit")
 	showCANIDs := flag.Bool("canids", false, "print all CAN IDs and exit")
 	decodeID := flag.String("decode-id", "", "decode a CAN ID (hex, e.g. 018F808F)")
+	shiftGear := flag.Int("shift-gear", -1, "output cansend command to shift to gear N (e.g. 10, 11, 17)")
+	shiftForce := flag.Bool("force", false, "use force mode for gear shift (re-confirm)")
+	eshifterInit := flag.Int("eshifter-init", -1, "output cansend commands to initialize eshifter with gear N")
+	canIface := flag.String("iface", "can0", "CAN interface name for cansend commands (default: can0)")
 	flag.Parse()
 
 	if *version {
@@ -57,6 +62,16 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println(decoded)
+		return
+	}
+
+	if *shiftGear >= 0 {
+		PrintGearCommands(byte(*shiftGear), *shiftForce, *canIface)
+		return
+	}
+
+	if *eshifterInit >= 0 {
+		PrintEshifterInitCommands(byte(*eshifterInit), *canIface)
 		return
 	}
 

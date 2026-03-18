@@ -22,16 +22,18 @@ func printFrameHeader(frame *CANFrame, header byte, frameType string) {
 		annotation = " {" + strings.Join(info.Annotations, ", ") + "}"
 	}
 
-	// For non-framed messages, try CBOR decode of full data
-	cborStr := ""
+	// For non-framed messages, try eshifter decode first, then CBOR
+	extra := ""
 	if frameType == "UNACCOUNTED" {
-		if item, ok := tryRawCBORDecode(frame.Data); ok {
-			cborStr = " -> CBOR: " + formatCBORInline(item)
+		if desc := FormatEshifterFrame(frame.ID, frame.Data); desc != "" {
+			extra = " -> " + desc
+		} else if item, ok := tryRawCBORDecode(frame.Data); ok {
+			extra = " -> CBOR: " + formatCBORInline(item)
 		}
 	}
 
 	fmt.Printf("ID:0x%s(%s) Hdr:%02X [%s] Data[%d]: %X%s%s\n",
-		frame.ID, idType, header, frameType, len(frame.Data), frame.Data, annotation, cborStr)
+		frame.ID, idType, header, frameType, len(frame.Data), frame.Data, annotation, extra)
 }
 
 // displayGroupedFrames displays frames grouped by CAN ID and sorted by timestamp
