@@ -206,3 +206,120 @@ Pattern: 0x01{SRC}{DST}{SRC}
 | 0x01A291A2 | eshifter (0x91) |
 | 0x01A292A2 | self (power_pedal 0x92) |
 | 0x01A293A2 | motor_control (0x93) |
+
+### power_control (PF=SA=0xA3) — Limited bus access
+
+| CAN ID | Target | Notes |
+|---|---|---|
+| 0x01A380A3 | imx8_bridge (0x80) | |
+| 0x01A382A3 | ble (0x82) | |
+| 0x01A383A3 | modem (0x83) | |
+| 0x01A384A3 | motor_sensor (0x84) | |
+| 0x01A385A3 | elock (0x85) | |
+| 0x01A386A3 | user_ecu (0x86) | |
+| 0x01A393A3 | motor_control (0x93) | |
+| 0x01A301A3 | ??? (PS=0x01) | Non-standard target |
+| 0x01A302A3 | ??? (PS=0x02) | Non-standard target |
+| 0x01A304A3 | ??? (PS=0x04) | Non-standard target |
+
+### charger (PF=SA=0x70) — Separate bus segment
+
+| CAN ID | Target | Notes |
+|---|---|---|
+| 0x01708D70 | charger_target (0x8D) | Battery BMS/PMU |
+
+## DP=0 CAN IDs — Special Purpose Messages
+
+Format: `0x00{PF}{CMD}{TARGET_PF_OR_ADDR}`
+
+### Light Pair Sync
+
+Every device sends one. Byte 1 = 0x88 (rearlight addr), byte 0 = 0x87 (frontlight addr).
+
+| CAN ID | Source |
+|---|---|
+| 0x008F8887 | imx8_bridge |
+| 0x00A18887 | motor_sensor |
+| 0x00A28887 | power_pedal |
+| 0x00A38887 | power_control |
+| 0x00C08887 | user_ecu |
+| 0x00C18887 | elock |
+| 0x00C28887 | eshifter |
+| 0x00C38887 | rearlight |
+| 0x00C48887 | frontlight |
+
+### BLE Command Messages (CMD=0x03 or 0x01, Target=0x82)
+
+| CAN IDs | Source |
+|---|---|
+| 0x008F0382 / 0x008F0182 | imx8_bridge |
+| 0x00A10382 / 0x00A10182 | motor_sensor |
+| 0x00A20382 / 0x00A20182 | power_pedal |
+| 0x00A30382 / 0x00A30182 | power_control |
+| 0x00C00382 / 0x00C00182 | user_ecu |
+| 0x00C10382 / 0x00C10182 | elock |
+
+### elock Special Messages
+
+| CAN ID | Description |
+|---|---|
+| 0x00C101A1 | CMD=0x01 to motor_sensor (PF=0xA1) |
+| 0x00C10BA2 | CMD=0x0B to power_pedal (PF=0xA2) |
+
+### eshifter Special Messages
+
+| CAN ID | Description |
+|---|---|
+| 0x00C201A1 | CMD=0x01 to motor_sensor (PF=0xA1) |
+| 0x00C201A2 | CMD=0x01 to power_pedal (PF=0xA2) |
+| 0x00C205A4 | CMD=0x05 to ??? (PF=0xA4, unknown device) |
+
+### power_control Special Messages
+
+| CAN ID | Description |
+|---|---|
+| 0x00A301A4 | CMD=0x01 to ??? (PF=0xA4) |
+| 0x00A302A4 | CMD=0x02 to ??? (PF=0xA4) |
+| 0x00A303A4 | CMD=0x03 to ??? (PF=0xA4) |
+| 0x00A306A4 | CMD=0x06 to ??? (PF=0xA4) |
+| 0x00A307A4 | CMD=0x07 to ??? (PF=0xA4) |
+| 0x00A310A7 | CMD=0x10 to ??? (PF=0xA7) |
+| 0x00A311A7 | CMD=0x11 to ??? (PF=0xA7) |
+| 0x00A312A7 | CMD=0x12 to ??? (PF=0xA7) |
+
+> PF=0xA4 and PF=0xA7 may be battery/charger subsystems.
+
+### user_ecu Special Messages
+
+| CAN ID | Description |
+|---|---|
+| 0x00C0EB02 | CMD=0xEB to ??? (0x02) |
+| 0x00C0EB04 | CMD=0xEB to ??? (0x04) |
+
+## Bus Topology
+
+```
+Main CAN Bus (1 Mbps, no hardware filters)
+ |
+ |-- imx8_bridge (0x80)    Central gateway to i.MX8 SoC
+ |-- ble (0x82)            Bluetooth Low Energy module
+ |-- modem (0x83)          Cellular modem
+ |-- motor_sensor (0x84)   Speed/cadence sensor
+ |-- elock (0x85)          Electronic lock
+ |-- user_ecu (0x86)       Main user controller
+ |-- frontlight (0x87)     Front light controller
+ |-- rearlight (0x88)      Rear light controller
+ |-- eshifter (0x91)       Electronic gear shifter
+ |-- power_pedal (0x92)    Pedal assist/torque sensor
+ |-- motor_control (0x93)  Motor controller (non-ARM MCU)
+ +-- power_control (??)    Power management (limited bus access)
+
+Charger CAN Bus (separate segment)
+ |-- charger (0x70)        Liteon charger controller
+ +-- charger_target (0x8D) Battery BMS / power delivery unit
+```
+
+## CBOR Framing Protocol
+
+The CAN bus uses a framing mechanism to transmit multi-frame CBOR-encoded messages over 8-byte CAN frames.
+
