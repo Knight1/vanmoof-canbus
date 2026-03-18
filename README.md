@@ -38,6 +38,8 @@ Parse a CAN dump file:
 | `--shift-gear N` | Output `cansend` command to shift to gear N |
 | `--shift-gear N --force` | Force gear shift (re-confirm mode) |
 | `--eshifter-init N` | Output `cansend` commands to initialize eshifter with gear N |
+| `--frontlight N` | Output `cansend` command for frontlight brightness (0=off, 1-100=%) |
+| `--rearlight N` | Output `cansend` command for rearlight brightness (0=off, 1-100=%) |
 | `--iface NAME` | CAN interface name for cansend commands (default: `can0`) |
 
 ### Examples
@@ -72,6 +74,15 @@ Parse a CAN dump file:
 
 # Initialize eshifter with gear 10
 ./canbus --eshifter-init 10
+
+# Turn on frontlight at 60% brightness
+./canbus --frontlight 60
+
+# Turn off frontlight
+./canbus --frontlight 0
+
+# Turn on rearlight at full brightness
+./canbus --rearlight 100
 
 # Use a specific CAN interface
 ./canbus --shift-gear 11 --iface vcan0

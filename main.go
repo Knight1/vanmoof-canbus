@@ -31,6 +31,8 @@ func main() {
 	shiftGear := flag.Int("shift-gear", -1, "output cansend command to shift to gear N (e.g. 10, 11, 17)")
 	shiftForce := flag.Bool("force", false, "use force mode for gear shift (re-confirm)")
 	eshifterInit := flag.Int("eshifter-init", -1, "output cansend commands to initialize eshifter with gear N")
+	frontlight := flag.Int("frontlight", -1, "output cansend command for frontlight brightness (0=off, 1-100=brightness %)")
+	rearlight := flag.Int("rearlight", -1, "output cansend command for rearlight brightness (0=off, 1-100=brightness %)")
 	canIface := flag.String("iface", "can0", "CAN interface name for cansend commands (default: can0)")
 	flag.Parse()
 
@@ -72,6 +74,24 @@ func main() {
 
 	if *eshifterInit >= 0 {
 		PrintEshifterInitCommands(byte(*eshifterInit), *canIface)
+		return
+	}
+
+	if *frontlight >= 0 {
+		if *frontlight > 100 {
+			fmt.Println("Error: frontlight brightness must be 0-100")
+			os.Exit(1)
+		}
+		PrintFrontlightCommands(byte(*frontlight), *canIface)
+		return
+	}
+
+	if *rearlight >= 0 {
+		if *rearlight > 100 {
+			fmt.Println("Error: rearlight brightness must be 0-100")
+			os.Exit(1)
+		}
+		PrintRearlightCommands(byte(*rearlight), *canIface)
 		return
 	}
 

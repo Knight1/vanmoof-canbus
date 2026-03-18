@@ -22,10 +22,12 @@ func printFrameHeader(frame *CANFrame, header byte, frameType string) {
 		annotation = " {" + strings.Join(info.Annotations, ", ") + "}"
 	}
 
-	// For non-framed messages, try eshifter decode first, then CBOR
+	// For non-framed messages, try protocol decoders first, then CBOR
 	extra := ""
 	if frameType == "UNACCOUNTED" {
 		if desc := FormatEshifterFrame(frame.ID, frame.Data); desc != "" {
+			extra = " -> " + desc
+		} else if desc := FormatLightFrame(frame.ID, frame.Data); desc != "" {
 			extra = " -> " + desc
 		} else if item, ok := tryRawCBORDecode(frame.Data); ok {
 			extra = " -> CBOR: " + formatCBORInline(item)
