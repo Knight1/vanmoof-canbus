@@ -113,35 +113,6 @@ func parseCandumpLine(line string) (*CANFrame, error) {
 	}, nil
 }
 
-// parseTimestamp extracts the numeric timestamp from a line
-// SavvyCAN CSV format uses microseconds, candump uses seconds
-func parseTimestamp(line string, isCSV bool) (float64, error) {
-	var ts float64
-	var err error
-
-	if isCSV {
-		// CSV format: first field is timestamp in microseconds
-		fields := strings.Split(line, ",")
-		if len(fields) > 0 {
-			ts, err = strconv.ParseFloat(strings.TrimSpace(fields[0]), 64)
-			if err != nil {
-				return 0, err
-			}
-			// Convert microseconds to seconds
-			return ts / 1_000_000, nil
-		}
-	} else {
-		// candump format: (timestamp) ... - already in seconds
-		start := strings.Index(line, "(")
-		end := strings.Index(line, ")")
-		if start != -1 && end != -1 && start < end {
-			tsStr := line[start+1 : end]
-			return strconv.ParseFloat(tsStr, 64)
-		}
-	}
-	return 0, fmt.Errorf("could not parse timestamp")
-}
-
 // formatDuration formats seconds to a human-readable string
 func formatDuration(seconds float64) string {
 	if seconds < 1 {
