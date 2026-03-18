@@ -35,6 +35,10 @@ Parse a CAN dump file:
 | `--hide-unaccounted` | Hide unaccounted frames |
 | `--hide-accounted` | Hide CBOR and heartbeat frames |
 | `--compare FILE...` | Compare unaccounted frames across multiple files |
+| `--shift-gear N` | Output `cansend` command to shift to gear N |
+| `--shift-gear N --force` | Force gear shift (re-confirm mode) |
+| `--eshifter-init N` | Output `cansend` commands to initialize eshifter with gear N |
+| `--iface NAME` | CAN interface name for cansend commands (default: `can0`) |
 
 ### Examples
 
@@ -59,6 +63,18 @@ Parse a CAN dump file:
 
 # Compare unaccounted frames across captures
 ./canbus --compare dumps/bikelocked.log dumps/startup_from_app.log
+
+# Shift to gear 11
+./canbus --shift-gear 11
+
+# Force shift to gear 17
+./canbus --shift-gear 17 --force
+
+# Initialize eshifter with gear 10
+./canbus --eshifter-init 10
+
+# Use a specific CAN interface
+./canbus --shift-gear 11 --iface vcan0
 ```
 
 ## VanMoof SA5 CAN Bus Protocol
