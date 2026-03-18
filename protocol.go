@@ -6,6 +6,28 @@ import (
 	"strings"
 )
 
+// PrintDeviceTable prints the device table in a formatted layout.
+func PrintDeviceTable() {
+	fmt.Println("VanMoof SA5 CAN Bus Device Table")
+	fmt.Println(strings.Repeat("-", 80))
+	fmt.Printf("%-4s  %-4s  %-6s  %-16s  %s\n", "PS", "PFSA", "Wire", "Name", "MCU")
+	fmt.Println(strings.Repeat("-", 80))
+	for _, d := range Devices {
+		wire := fmt.Sprintf("0x%03X", deviceEncoded(d.PFSA))
+		fmt.Printf("0x%02X  0x%02X  %s  %-16s  %s\n", d.Address, d.PFSA, wire, d.Name, d.MCU)
+	}
+	wire := fmt.Sprintf("0x%03X", deviceEncoded(PowerControlDevice.PFSA))
+	fmt.Printf("????  0x%02X  %s  %-16s  %s\n", PowerControlDevice.PFSA, wire, PowerControlDevice.Name, PowerControlDevice.MCU)
+	wire = fmt.Sprintf("0x%03X", deviceEncoded(ChargerDevice.PFSA))
+	fmt.Printf("????  0x%02X  %s  %-16s  %s  (separate bus)\n", ChargerDevice.PFSA, wire, ChargerDevice.Name, ChargerDevice.MCU)
+	fmt.Println(strings.Repeat("-", 80))
+}
+
+// LookupCANID looks up a CAN ID hex string and returns its wire-level analysis.
+func LookupCANID(idHex string) *WireCANIDInfo {
+	return AnalyzeWireCANID(idHex)
+}
+
 // Device represents a CAN bus device on the VanMoof SA5.
 type Device struct {
 	Address uint8  // PS address CAN IDs (e.g., 0x80)
@@ -185,16 +207,6 @@ func ParseCANIDString(s string) (*DecodedCANID, error) {
 	return DecodeCANID(uint32(val)), nil
 }
 
-// LookupCANID looks up a CAN ID and returns its full description.
-func LookupCANID(raw uint32) *CANID {
-	for i := range AllCANIDs {
-		if AllCANIDs[i].ID == raw {
-			return &AllCANIDs[i]
-		}
-	}
-	return nil
-}
-
 // ConstructCANID builds a CAN ID from components.
 func ConstructCANID(dp uint8, sourcePFSA uint8, targetAddr uint8) uint32 {
 	return (uint32(dp) << 24) | (uint32(sourcePFSA) << 16) | (uint32(targetAddr) << 8) | uint32(sourcePFSA)
@@ -308,30 +320,6 @@ func AnalyzeWireCANID(idHex string) *WireCANIDInfo {
 	}
 
 	return info
-}
-
-// PrintDeviceTable prints the complete device address table.
-func PrintDeviceTable() {
-	fmt.Println("VanMoof SA5 CAN Bus Device Table")
-	fmt.Println(strings.Repeat("=", 72))
-	fmt.Printf("%-8s %-16s %-8s %-16s %s\n", "Address", "Device", "PF=SA", "MCU", "Notes")
-	fmt.Println(strings.Repeat("-", 72))
-
-	for _, d := range Devices {
-		notes := ""
-		if d.PFSA == d.Address {
-			notes = "PF=SA matches address"
-		}
-		fmt.Printf("0x%02X     %-16s 0x%02X     %-16s %s\n",
-			d.Address, d.Name, d.PFSA, d.MCU, notes)
-	}
-
-	fmt.Printf("???      %-16s 0x%02X     %-16s %s\n",
-		PowerControlDevice.Name, PowerControlDevice.PFSA, PowerControlDevice.MCU, "PS address unknown")
-	fmt.Printf("???      %-16s 0x%02X     %-16s %s\n",
-		ChargerDevice.Name, ChargerDevice.PFSA, ChargerDevice.MCU, "separate CAN bus segment")
-
-	fmt.Println(strings.Repeat("=", 72))
 }
 
 // PrintProtocolSummary prints the CAN ID format and key findings.
