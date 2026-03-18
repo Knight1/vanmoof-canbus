@@ -29,9 +29,6 @@ const (
 	EshifterTypeStatus   = 0x00 // Status / init
 )
 
-// Config data prefix
-var eshifterConfigPrefix = []byte{0x00, 0xA9, 0xFC, 0x8C}
-
 // EshifterFrameType identifies the kind of eshifter frame
 type EshifterFrameType int
 
