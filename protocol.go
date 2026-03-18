@@ -362,11 +362,6 @@ func PrintAllCANIDs() {
 	fmt.Println("All CAN IDs (grouped by source device):")
 	fmt.Println(strings.Repeat("=", 72))
 
-	type deviceEntry struct {
-		dev *Device
-		ids []uint32
-	}
-
 	// Build CAN IDs for each device dynamically
 	allDevicePFSA := []uint8{0x8F, 0xA1, 0xC1, 0xC0, 0xC4, 0xC3, 0xC2, 0xA2, 0xA3, 0x70}
 	targetAddrs := []uint8{0x80, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x91, 0x92, 0x93}
