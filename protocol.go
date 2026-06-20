@@ -20,6 +20,8 @@ func PrintDeviceTable() {
 	fmt.Printf("????  0x%02X  %s  %-16s  %s\n", PowerControlDevice.PFSA, wire, PowerControlDevice.Name, PowerControlDevice.MCU)
 	wire = fmt.Sprintf("0x%03X", deviceEncoded(ChargerDevice.PFSA))
 	fmt.Printf("????  0x%02X  %s  %-16s  %s  (separate bus)\n", ChargerDevice.PFSA, wire, ChargerDevice.Name, ChargerDevice.MCU)
+	wire = fmt.Sprintf("0x%03X", deviceEncoded(BatteryPrimaryDevice.PFSA))
+	fmt.Printf("????  0x%02X  %s  %-16s  %s\n", BatteryPrimaryDevice.PFSA, wire, BatteryPrimaryDevice.Name, BatteryPrimaryDevice.MCU)
 	fmt.Println(strings.Repeat("-", 80))
 }
 
@@ -80,6 +82,10 @@ var PowerControlDevice = Device{Address: 0x00, PFSA: 0xA3, Name: "power_control"
 // ChargerDevice uses a separate CAN bus segment.
 var ChargerDevice = Device{Address: 0x00, PFSA: 0x70, Name: "charger", MCU: "NXP LPC546xx"}
 
+// BatteryPrimaryDevice is the battery pack OD node (a0=0xA4) on the main bus.
+// It publishes the battery telemetry signal run (charging..health).
+var BatteryPrimaryDevice = Device{Address: 0x00, PFSA: 0xA4, Name: "battery_primary", MCU: "BMS (Panasonic/Dynapack)"}
+
 // deviceByAddress returns the device with the given PS address, or nil.
 func deviceByAddress(addr uint8) *Device {
 	for i := range Devices {
@@ -102,6 +108,9 @@ func deviceByPFSA(pfsa uint8) *Device {
 	}
 	if ChargerDevice.PFSA == pfsa {
 		return &ChargerDevice
+	}
+	if BatteryPrimaryDevice.PFSA == pfsa {
+		return &BatteryPrimaryDevice
 	}
 	return nil
 }
@@ -233,6 +242,9 @@ func deviceByEncoded(enc uint16) *Device {
 	}
 	if deviceEncoded(ChargerDevice.PFSA) == enc {
 		return &ChargerDevice
+	}
+	if deviceEncoded(BatteryPrimaryDevice.PFSA) == enc {
+		return &BatteryPrimaryDevice
 	}
 	return nil
 }
