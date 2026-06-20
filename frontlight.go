@@ -295,3 +295,41 @@ func PrintRearlightCommands(brightness byte, iface string) {
 	fmt.Printf("# candump %s,1860F110:1FFFFFFF  (feedback)\n", iface)
 	fmt.Printf("# candump %s,18623110:1FFFFFFF  (detailed status)\n", iface)
 }
+
+// PrintFrontlightConfirm / PrintRearlightConfirm output a runnable
+// send-then-monitor sequence: set the brightness, then watch the light's
+// brightness status (byte 0) until it reaches the target. The command is
+// identical to the non-confirm form; only the monitor wrapper is added.
+func PrintFrontlightConfirm(brightness byte, iface string) {
+	printLightConfirm("Frontlight", "18827880", "18805110", brightness, iface)
+}
+
+func PrintRearlightConfirm(brightness byte, iface string) {
+	printLightConfirm("Rearlight", "18627860", "18605110", brightness, iface)
+}
+
+func printLightConfirm(name, cmdID, statusID string, brightness byte, iface string) {
+	on := brightness != 0
+	desc := fmt.Sprintf("set %s brightness to %d%%", strings.ToLower(name), brightness)
+	if !on {
+		desc = "turn off " + strings.ToLower(name)
+	}
+	frame := EshifterCANFrame{CANID: cmdID, Data: BuildLightCommand(brightness, on), Desc: desc}
+
+	if on {
+		fmt.Printf("%s: brightness %d%% + confirm\n", name, brightness)
+	} else {
+		fmt.Printf("%s: off + confirm\n", name)
+	}
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Println("# 1) send the brightness command")
+	fmt.Println(frame.FormatCansend(iface))
+	fmt.Println()
+	fmt.Println("# 2) watch the brightness status (timeout 6s) until it reaches the target")
+	fmt.Printf("timeout 6 candump -L %s,%s:1FFFFFFF | while read -r line; do\n", iface, statusID)
+	fmt.Println("  d=\"${line##*#}\"")
+	fmt.Println("  b=$((16#${d:0:2}))") // status data byte 0 = brightness %
+	fmt.Printf("  echo \"  %s status: brightness ${b}%%\"\n", name)
+	fmt.Printf("  if [ \"$b\" = \"%d\" ]; then echo \"RESULT: reached %d%%\"; break; fi\n", brightness, brightness)
+	fmt.Println("done")
+}

@@ -202,3 +202,80 @@ func RunEshifterCheck(iface string, dur time.Duration) {
 		fmt.Println("VERDICT: PARTIAL — frames seen but no gear status; the eshifter may be uninitialized (see -eshifter-init).")
 	}
 }
+
+// RunFrontlightCheck / RunRearlightCheck attach to the CAN device (or read a
+// piped capture) and report front/rear LED-light health. Front and rear lights
+// run the same firmware family; the only difference is the CAN node.
+func RunFrontlightCheck(iface string, dur time.Duration) {
+	runLightCheck(iface, dur, LightTargetFront, "Frontlight")
+}
+func RunRearlightCheck(iface string, dur time.Duration) {
+	runLightCheck(iface, dur, LightTargetRear, "Rearlight")
+}
+
+// runLightCheck reports the bench health of a front/rear LED light.
+//
+// Observable health signals (per the frontlight firmware + bus captures):
+//   - heartbeat (0x01111880 front / 0x01111860 rear) .... the MCU is alive
+//   - brightness status (0x188051x0 / 0x186051x0) ....... current brightness 0-100%
+//   - detailed status (0x188231x0 / 0x186231x0) ......... brightness + mode + dev param
+//   - feedback (0x1880F1x0 / 0x1860F1x0) ................. raw status byte
+//
+// The light protocol carries no documented dedicated fault code, so the verdict
+// is OK once the device is alive and reporting brightness.
+func runLightCheck(iface string, dur time.Duration, target LightTarget, label string) {
+	var sawHeartbeat, haveBrightness, sawDetail bool
+	var lastBrightness byte
+	printedBrightness := -1
+
+	fmt.Printf("%s bench health check\n", label)
+	readFrames(iface, dur, func(f *CANFrame) {
+		ft, tgt := IsLightFrame(f.ID)
+		if tgt != target {
+			return
+		}
+		switch ft {
+		case LightFrameHeartbeat:
+			if !sawHeartbeat {
+				fmt.Printf("  [alive]  %s heartbeat\n", label)
+			}
+			sawHeartbeat = true
+		case LightFrameStatus:
+			if st := DecodeLightStatus(f.Data); st != nil {
+				haveBrightness = true
+				lastBrightness = st.Brightness
+				if int(st.Brightness) != printedBrightness { // print on change
+					printedBrightness = int(st.Brightness)
+					fmt.Printf("  [status] %s\n", FormatLightFrame(f.ID, f.Data))
+				}
+			}
+		case LightFrameDetail:
+			if det := DecodeLightDetail(f.Data); det != nil {
+				haveBrightness = true
+				lastBrightness = det.Brightness
+				if !sawDetail { // print the first detail frame
+					sawDetail = true
+					fmt.Printf("  [detail] %s\n", FormatLightFrame(f.ID, f.Data))
+				}
+			}
+		}
+	})
+
+	fmt.Println(strings.Repeat("-", 50))
+	if !sawHeartbeat && !haveBrightness {
+		fmt.Printf("VERDICT: NO SIGNAL — no %s frames seen.\n", label)
+		fmt.Println("         Check power, CAN wiring and 120-ohm bus termination.")
+		return
+	}
+	fmt.Printf("Alive (heartbeat): %v\n", sawHeartbeat)
+	if haveBrightness {
+		fmt.Printf("Brightness:        %d%%\n", lastBrightness)
+	} else {
+		fmt.Println("Brightness:        (no status frame seen)")
+	}
+	if haveBrightness {
+		fmt.Printf("VERDICT: OK — %s is alive and reporting brightness.\n", label)
+	} else {
+		fmt.Printf("VERDICT: PARTIAL — %s heartbeat seen but no brightness status.\n", label)
+	}
+}

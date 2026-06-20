@@ -37,6 +37,8 @@ func main() {
 	elockUnlockConfirm := flag.Bool("elock-unlock-confirm", false, "output unlock command plus a send-then-monitor sequence that reports the result")
 	elockCheck := flag.Bool("elock-check", false, "attach to the CAN device (or read piped capture) and report elock health (alive / lock state / faults)")
 	eshifterCheck := flag.Bool("eshifter-check", false, "attach to the CAN device (or read piped capture) and report eshifter health (alive / gear / faults)")
+	frontlightCheck := flag.Bool("frontlight-check", false, "attach to the CAN device (or read piped capture) and report frontlight health (alive / brightness)")
+	rearlightCheck := flag.Bool("rearlight-check", false, "attach to the CAN device (or read piped capture) and report rearlight health (alive / brightness)")
 	checkDuration := flag.Int("duration", 6, "seconds to listen on the CAN interface for -elock-check/-eshifter-check (live mode)")
 	frontlight := flag.Int("frontlight", -1, "output cansend command for frontlight brightness (0=off, 1-100=brightness %)")
 	rearlight := flag.Int("rearlight", -1, "output cansend command for rearlight brightness (0=off, 1-100=brightness %)")
@@ -113,7 +115,11 @@ func main() {
 			fmt.Println("Error: frontlight brightness must be 0-100")
 			os.Exit(1)
 		}
-		PrintFrontlightCommands(byte(*frontlight), *canIface)
+		if *confirm {
+			PrintFrontlightConfirm(byte(*frontlight), *canIface)
+		} else {
+			PrintFrontlightCommands(byte(*frontlight), *canIface)
+		}
 		return
 	}
 
@@ -122,7 +128,21 @@ func main() {
 			fmt.Println("Error: rearlight brightness must be 0-100")
 			os.Exit(1)
 		}
-		PrintRearlightCommands(byte(*rearlight), *canIface)
+		if *confirm {
+			PrintRearlightConfirm(byte(*rearlight), *canIface)
+		} else {
+			PrintRearlightCommands(byte(*rearlight), *canIface)
+		}
+		return
+	}
+
+	if *frontlightCheck {
+		RunFrontlightCheck(*canIface, time.Duration(*checkDuration)*time.Second)
+		return
+	}
+
+	if *rearlightCheck {
+		RunRearlightCheck(*canIface, time.Duration(*checkDuration)*time.Second)
 		return
 	}
 
