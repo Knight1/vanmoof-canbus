@@ -29,6 +29,12 @@ func printFrameHeader(frame *CANFrame, header byte, frameType string) {
 			extra = " -> " + desc
 		} else if desc := FormatLightFrame(frame.ID, frame.Data); desc != "" {
 			extra = " -> " + desc
+		} else if desc := FormatElockFrame(frame.ID, frame.Data); desc != "" {
+			extra = " -> " + desc
+		} else if desc := FormatBatteryFrame(frame.ID, frame.Data); desc != "" {
+			extra = " -> " + desc
+		} else if desc := FormatPowerFrame(frame.ID, frame.Data); desc != "" {
+			extra = " -> " + desc
 		} else if item, ok := tryRawCBORDecode(frame.Data); ok {
 			extra = " -> CBOR: " + formatCBORInline(item)
 		}

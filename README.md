@@ -96,40 +96,46 @@ Parse a CAN dump file:
 |---|---|
 | Speed | 1 Mbps |
 | Controller | Bosch M_CAN (CAN FD capable, used as classic CAN) |
-| M_CAN base | 0x4009D000 |
-| Hardware filters | None (promiscuous mode) |
+Impl| Hardware filters | None (promiscuous mode) |
 | Frame type | 29-bit Extended CAN ID |
-#### DP=0: Special Purpose Messages
 
-| Pattern | Name | Description |
-|---|---|---|
-| `0x00{PF}8887` | Light-pair sync | Every device sends one; b1=0x88(rearlight), b0=0x87(frontlight) |
-| `0x00{PF}0182` | BLE cmd type 1 | Command to BLE module |
-| `0x00{PF}0382` | BLE cmd type 3 | Command to BLE module |
-| `0x00{PF}{cmd}{target_pfsa}` | Device command | DP=0 command to specific device by PF/SA value |
+### Device Table
+
+| PS Address | Device | PF=SA | MCU | Notes |
+|---|---|---|---|---|
+| 0x80 | imx8_bridge | 0x8F | NXP LPC546xx | Central gateway to i.MX8 |
+| 0x82 | ble | 0x82 | Nordic nRF52840 | Bluetooth Low Energy |
+| 0x83 | modem | 0x83 | Nordic nRF52 | Cellular modem |
+| 0x84 | motor_sensor | 0xA1 | NXP LPC546xx | Speed/cadence sensor |
+| 0x85 | elock | 0xC1 | NXP LPC546xx | Electronic lock |
+| 0x86 | user_ecu | 0xC0 | NXP LPC546xx | Main user controller |
+| 0x87 | frontlight | 0xC4 | NXP LPC546xx | Front light controller |
+| 0x88 | rearlight | 0xC3 | NXP LPC546xx | Rear light controller |
+| 0x8D | charger_target | ??? | Unknown | Battery BMS or power delivery |
+| 0x91 | eshifter | 0xC2 | NXP LPC546xx | Electronic gear shifter |
+| 0x92 | power_pedal | 0xA2 | NXP LPC546xx | Pedal assist/torque sensor |
+| 0x93 | motor_control | 0x93 | Unknown | Motor controller (non-ARM MCU) |
+| ??? | power_control | 0xA3 | NXP LPC546xx | Power management (PS addr unknown) |
+| ??? | charger | 0x70 | NXP LPC546xx | Liteon charger (separate CAN bus) |
+
+### On-Wire CAN ID Encoding
+
+CAN IDs on the wire use a device-encoded value: `device_encoded = (PFSA & 0x7F) << 5`
+
+- **Heartbeat:** `CAN_ID = 0x01111000 + device_encoded`
+- **Data frame:** `CAN_ID = (1 << 28) | (sender << 16) | (class << 12) | destination`
+
+See [CANBUS.md](CANBUS.md) for the full CAN ID map and protocol details.
 
 ### CBOR Framing Protocol
 
-The VanMoof CAN bus uses a framing mechanism to transmit multi-frame CBOR-encoded messages over 8-byte CAN frames.
-
-#### Header Byte Structure
-
-The first byte of each CAN frame is a header byte. The high nibble determines the frame type:
+The CAN bus uses a framing mechanism to transmit multi-frame CBOR-encoded messages over 8-byte CAN frames.
 
 | Header Range | Type | Description |
 |---|---|---|
 | `0xAx` (0xA0-0xAF) | **START** | Begins a new CBOR message |
 | `0x1x` (0x10-0x1F) | **CONTINUATION** | Continuation of current message |
-| `0x8x` / `0x9x` | **DATA** | Raw data frame (not CBOR) |
-| `0x0x` (0x00) | **STATUS/HEARTBEAT** | Keep-alive or status (IDs starting with `01111`, all-zero payload) |
-
-#### Decoding Steps
-
-1. **Detect** frame type by checking header byte high nibble
-2. **Extract** payload: remove header byte (first byte), keep remaining 7 bytes
-3. **Accumulate**: START frames initialize buffer; CONTINUATION frames append
-4. **Decode** completed CBOR message when parser succeeds
-5. **Display** the decoded structure recursively
+| `0x0x` (0x00) | **HEARTBEAT** | Keep-alive (IDs starting with `01111`, all-zero payload) |
 
 ### Bus Topology
 

@@ -15,7 +15,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-const Version = "0.2.0"
+const Version = "0.3.0"
 
 func main() {
 	version := flag.Bool("version", false, "show version information")
@@ -31,6 +31,7 @@ func main() {
 	shiftGear := flag.Int("shift-gear", -1, "output cansend command to shift to gear N (e.g. 10, 11, 17)")
 	shiftForce := flag.Bool("force", false, "use force mode for gear shift (re-confirm)")
 	eshifterInit := flag.Int("eshifter-init", -1, "output cansend commands to initialize eshifter with gear N")
+	elockUnlock := flag.Bool("elock-unlock", false, "output cansend command to unlock the elock")
 	frontlight := flag.Int("frontlight", -1, "output cansend command for frontlight brightness (0=off, 1-100=brightness %)")
 	rearlight := flag.Int("rearlight", -1, "output cansend command for rearlight brightness (0=off, 1-100=brightness %)")
 	canIface := flag.String("iface", "can0", "CAN interface name for cansend commands (default: can0)")
@@ -74,6 +75,11 @@ func main() {
 
 	if *eshifterInit >= 0 {
 		PrintEshifterInitCommands(byte(*eshifterInit), *canIface)
+		return
+	}
+
+	if *elockUnlock {
+		PrintElockUnlockCommand(*canIface)
 		return
 	}
 
