@@ -316,3 +316,36 @@ func PrintEshifterInitCommands(gear byte, iface string) {
 	fmt.Printf("# candump %s,10F11841:1FFFFFFF  (telemetry)\n", iface)
 	fmt.Printf("# candump %s,10F11840:1FFFFFFF  (confirmations)\n", iface)
 }
+
+// PrintGearShiftConfirm outputs a runnable send-then-monitor gear-shift sequence:
+// it sends the gear command, then watches the eshifter status report
+// (0x1840B110, byte 3 = current gear) until the target gear is reported or it
+// times out. The gear command is identical to PrintGearCommands; only the
+// monitor wrapper is added. The eshifter must already be initialized (see
+// --eshifter-init) for the shift to take effect.
+func PrintGearShiftConfirm(gear byte, force bool, iface string) {
+	cmd := EshifterCANFrame{
+		CANID: "18411840",
+		Data:  BuildGearCommand(gear, force),
+		Desc:  fmt.Sprintf("shift to gear %d", gear),
+	}
+
+	mode := "set"
+	if force {
+		mode = "force"
+	}
+
+	fmt.Printf("Eshifter: shift to gear %d (0x%02X) mode=%s + confirm\n", gear, gear, mode)
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Println("# Prerequisite: eshifter must be initialized (see: canbus -eshifter-init <gear>)")
+	fmt.Println("# 1) send the gear command")
+	fmt.Println(cmd.FormatCansend(iface))
+	fmt.Println()
+	fmt.Println("# 2) watch the status report (timeout 8s) until the gear reaches the target")
+	fmt.Printf("timeout 8 candump -L %s,1840B110:1FFFFFFF | while read -r line; do\n", iface)
+	fmt.Println("  d=\"${line##*#}\"")
+	fmt.Println("  cur=$((16#${d:6:2}))") // status data byte 3 = current gear
+	fmt.Println("  echo \"  eshifter status: gear ${cur}\"")
+	fmt.Printf("  if [ \"$cur\" = \"%d\" ]; then echo \"RESULT: reached gear %d\"; break; fi\n", gear, gear)
+	fmt.Println("done")
+}

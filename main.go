@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 )
@@ -30,9 +31,13 @@ func main() {
 	decodeID := flag.String("decode-id", "", "decode a CAN ID (hex, e.g. 018F808F)")
 	shiftGear := flag.Int("shift-gear", -1, "output cansend command to shift to gear N (e.g. 10, 11, 17)")
 	shiftForce := flag.Bool("force", false, "use force mode for gear shift (re-confirm)")
+	confirm := flag.Bool("confirm", false, "with --shift-gear: emit a send-then-monitor sequence that waits for the gear to change")
 	eshifterInit := flag.Int("eshifter-init", -1, "output cansend commands to initialize eshifter with gear N")
 	elockUnlock := flag.Bool("elock-unlock", false, "output cansend command to unlock the elock")
 	elockUnlockConfirm := flag.Bool("elock-unlock-confirm", false, "output unlock command plus a send-then-monitor sequence that reports the result")
+	elockCheck := flag.Bool("elock-check", false, "attach to the CAN device (or read piped capture) and report elock health (alive / lock state / faults)")
+	eshifterCheck := flag.Bool("eshifter-check", false, "attach to the CAN device (or read piped capture) and report eshifter health (alive / gear / faults)")
+	checkDuration := flag.Int("duration", 6, "seconds to listen on the CAN interface for -elock-check/-eshifter-check (live mode)")
 	frontlight := flag.Int("frontlight", -1, "output cansend command for frontlight brightness (0=off, 1-100=brightness %)")
 	rearlight := flag.Int("rearlight", -1, "output cansend command for rearlight brightness (0=off, 1-100=brightness %)")
 	canIface := flag.String("iface", "can0", "CAN interface name for cansend commands (default: can0)")
@@ -70,7 +75,11 @@ func main() {
 	}
 
 	if *shiftGear >= 0 {
-		PrintGearCommands(byte(*shiftGear), *shiftForce, *canIface)
+		if *confirm {
+			PrintGearShiftConfirm(byte(*shiftGear), *shiftForce, *canIface)
+		} else {
+			PrintGearCommands(byte(*shiftGear), *shiftForce, *canIface)
+		}
 		return
 	}
 
@@ -86,6 +95,16 @@ func main() {
 
 	if *elockUnlockConfirm {
 		PrintElockUnlockConfirm(*canIface)
+		return
+	}
+
+	if *elockCheck {
+		RunElockCheck(*canIface, time.Duration(*checkDuration)*time.Second)
+		return
+	}
+
+	if *eshifterCheck {
+		RunEshifterCheck(*canIface, time.Duration(*checkDuration)*time.Second)
 		return
 	}
 
