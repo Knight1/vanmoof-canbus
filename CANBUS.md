@@ -1215,11 +1215,22 @@ Observed in captures:
 
 ### Data Report Frame
 
-**CAN ID:** `0x18203110` (elock sender=0x820, class=0x3, dest=0x110)
+A data report is a short **multi-frame stream**: a start frame (ID ending
+`…10`), zero or more continuation frames (`…11`), and a terminating empty
+acknowledgment (`…00`). The destination `0x110` is a broadcast/status address
+(same pattern as eshifter's `0x1840B110`).
 
-Variable-length payload. The destination address `0x110` is a broadcast/status address (same pattern used by eshifter's `0x1840B110`). Observed payload: `8877665544332211` (8 bytes).
+| Role | CAN ID | Notes |
+|---|---|---|
+| Report (start) | `0x18203110` / `0x18023110` | up to 8 bytes |
+| Continuation | `0x18203111` / `0x18023111` | ≤7 bytes, appended in order |
+| Acknowledgment | `0x18203100` / `0x18023100` | empty, ends the stream |
 
-Each data report is followed by an empty acknowledgment on `0x18203100`.
+Two ID spellings occur in the captures (`0x1820_31xx` and `0x1802_31xx`); both
+are decoded. Observed payloads are plaintext (e.g. `8877665544332211`, and small
+status/counter bytes during the unlock exchange) — see *Elock Security on the CAN
+Bus*. The decoder reassembles start + continuations into a single payload; field
+semantics are not interpreted (undocumented).
 
 ### Lock/Unlock Flow
 
@@ -1299,25 +1310,32 @@ Message types: ACK=0, PUBLISH=1, SUBSCRIBE=2, UNSUBSCRIBE=3, GET=4, SET=5, OWN=6
 0x18209820#03           <- elock status: STUCK (unlock attempted, mechanism jammed)
 ```
 
-### Elock Internal Security
+### Elock Security on the CAN Bus
 
-The elock firmware contains an AES encryption layer (keys stored in flash at `0xFF0C00`-`0xFF0C1C`) with 4 key slots mapped to motor control states:
+**The elock unlock is not cryptographically protected on the CAN bus.** All
+observed elock traffic is plaintext, and the unlock is a plain unauthenticated
+broadcast:
 
-| Key Slot | Motor State | Lock State |
-|---|---|---|
-| 1 | 0 | UNKNOWN |
-| 2 | 1 | LOCKED |
-| 4 | 2 | UNLOCKED |
-| 8 | 3 | STUCK |
+- **Unlock = `0x1800D110#01`** (class 0xD system-state broadcast). The elock acts
+  on this directly; there is no challenge/response, signature or encryption on
+  the CAN side. Anyone on the bus can send it (the BLE authentication only gates
+  the app → user_ecu step; it does not protect the resulting CAN command).
+- **Lock-state broadcasts** (`0x18209820`) and the **data-report stream**
+  (`0x18023110`/`…3111`/`…3100`) are plaintext — the observed payloads are small
+  counters/status bytes and a fixed `8877665544332211` placeholder, not
+  ciphertext. No encrypted frame has been seen in any capture.
+- The lock holds its own key/secret material **internally**; it is never carried
+  on the CAN bus and is **not required to unlock**. Consequently a replacement
+  elock works **without any bus-side re-keying** — there is nothing to update on
+  the Module or the bus when the lock is swapped.
 
-Key firmware functions:
-- `0x5c08`: Motor control (writes direction to register 0x10c, speed to 0x130)
-- `0x5e38`: Decrypt engine with motor control integration
-- `0x6128`: CAN receive/decrypt entry point
-- `0x6848`: Key slot selector (1/2/4/8 -> selects one of 4 AES keys)
-- `0x6698`: Reads key configuration from flash (7 parameters, 28 bytes)
+> Earlier notes in this file described an on-bus "AES layer with 4 key slots" and
+> a CAN decrypt path. That is not borne out by the captures — no elock CAN frame
+> is encrypted, and the unlock path carries no key. The earlier per-function
+> addresses were misattributed and have been removed.
 
-This AES layer is used for encrypted data reports (`0x18203110`) and secure operations, but the basic unlock trigger (`0x1800D110#01`) bypasses it — the elock acts on the class 0xD broadcast directly.
+> A "Key Index" exists on the **BLE** Defence/Security service, not on CAN. BLE
+> key/auth behaviour is out of scope here — see `BLE.md`.
 
 ### Elock Heartbeat
 

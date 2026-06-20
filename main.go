@@ -32,6 +32,7 @@ func main() {
 	shiftForce := flag.Bool("force", false, "use force mode for gear shift (re-confirm)")
 	eshifterInit := flag.Int("eshifter-init", -1, "output cansend commands to initialize eshifter with gear N")
 	elockUnlock := flag.Bool("elock-unlock", false, "output cansend command to unlock the elock")
+	elockUnlockConfirm := flag.Bool("elock-unlock-confirm", false, "output unlock command plus a send-then-monitor sequence that reports the result")
 	frontlight := flag.Int("frontlight", -1, "output cansend command for frontlight brightness (0=off, 1-100=brightness %)")
 	rearlight := flag.Int("rearlight", -1, "output cansend command for rearlight brightness (0=off, 1-100=brightness %)")
 	canIface := flag.String("iface", "can0", "CAN interface name for cansend commands (default: can0)")
@@ -80,6 +81,11 @@ func main() {
 
 	if *elockUnlock {
 		PrintElockUnlockCommand(*canIface)
+		return
+	}
+
+	if *elockUnlockConfirm {
+		PrintElockUnlockConfirm(*canIface)
 		return
 	}
 
