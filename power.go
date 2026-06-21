@@ -106,6 +106,57 @@ func odFields(canIDHex string) (a0, a1 byte, ok bool) {
 // ODNodeName returns the OD device/service name for a node id, or "".
 func ODNodeName(node byte) string { return ODNodes[node] }
 
+// ODAddress is the decoded Object-Dictionary address of a telemetry CAN ID.
+// The on-wire 29-bit OD id packs four octet fields:
+//
+//	a0    = node      (bits 28:21) — the publishing node
+//	a1    = signal    (bits 20:13) — the signal/object index
+//	a2    = peer/port (bits 12:5)  — the peer node / port (0x82 power, 0x08 broadcast, self, …)
+//	class = sub-type  (bits 4:0)   — message class / sub-type
+//
+// Verified against the documented signals (battery 0x14811040 -> a0=0xA4 a1=0x08
+// a2=0x82; power_pedal switch 0x14415040 -> a0=0xA2 a1=0x0A a2=0x82).
+type ODAddress struct {
+	A0, A1, A2, Class byte
+}
+
+// DecodeODAddress splits an OD telemetry CAN ID (hex) into its address octets.
+func DecodeODAddress(canIDHex string) (ODAddress, bool) {
+	id, err := strconv.ParseUint(canIDHex, 16, 32)
+	if err != nil {
+		return ODAddress{}, false
+	}
+	return ODAddress{
+		A0:    byte((id >> 21) & 0xFF),
+		A1:    byte((id >> 13) & 0xFF),
+		A2:    byte((id >> 5) & 0xFF),
+		Class: byte(id & 0x1F),
+	}, true
+}
+
+// FormatODAddress returns a one-line OD-address breakdown for a telemetry CAN ID,
+// or "" if it does not look like an OD frame (a0 and a2 must both be recognised
+// OD nodes). a0 is the publishing node, a2 the peer/port. Only the address
+// decode (verified) and node names are reported — signal semantics are not
+// guessed, except the one documented power_pedal switch signal.
+func FormatODAddress(canIDHex string) string {
+	a, ok := DecodeODAddress(canIDHex)
+	if !ok {
+		return ""
+	}
+	a0name, a0ok := ODNodes[a.A0]
+	a2name, a2ok := ODNodes[a.A2]
+	if !a0ok || !a2ok {
+		return "" // not an OD telemetry frame
+	}
+	s := fmt.Sprintf("OD a0=0x%02X(%s) a1=0x%02X a2=0x%02X(%s) class=0x%02X",
+		a.A0, a0name, a.A1, a.A2, a2name, a.Class)
+	if a.A0 == PowerPedalNode && a.A1 == PowerPedalSwitchA1 {
+		s += "  [power_switch_control_init]"
+	}
+	return s
+}
+
 // PowerFrameType identifies a battery/charger/power-control OD frame.
 type PowerFrameType int
 

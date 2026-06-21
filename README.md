@@ -37,10 +37,34 @@ Parse a CAN dump file:
 | `--compare FILE...` | Compare unaccounted frames across multiple files |
 | `--shift-gear N` | Output `cansend` command to shift to gear N |
 | `--shift-gear N --force` | Force gear shift (re-confirm mode) |
+| `--shift-gear N --confirm` | Shift, then watch the eshifter status until the gear changes |
 | `--eshifter-init N` | Output `cansend` commands to initialize eshifter with gear N |
 | `--frontlight N` | Output `cansend` command for frontlight brightness (0=off, 1-100=%) |
+| `--frontlight N --confirm` | Set brightness, then watch the status until it reaches the target |
 | `--rearlight N` | Output `cansend` command for rearlight brightness (0=off, 1-100=%) |
-| `--iface NAME` | CAN interface name for cansend commands (default: `can0`) |
+| `--rearlight N --confirm` | Set brightness, then watch the status until it reaches the target |
+| `--fake-pedal-switch N` | Output `cansend` faking the power_pedal switch_control signal (a1=0x0A) with byte value N |
+| `--fake-pedal-signal A1` | Output `cansend` faking any power_pedal OD signal at index A1 (pair with `--fake-pedal-data`) |
+| `--fake-pedal-data HEX` | Hex payload for `--fake-pedal-signal` (e.g. `01F4`); empty = zero-length frame |
+| `--elock-unlock` | Output `cansend` command to unlock the elock (kicklock) |
+| `--elock-unlock-confirm` | Unlock, then watch the lock state for the result (UNLOCKED/STUCK) |
+| `--iface NAME` | CAN interface name (default: `can0`) |
+
+#### Live diagnostics (attach to the CAN device, or pipe a capture)
+
+These commands **attach directly to the CAN interface** (Linux SocketCAN) for a few
+seconds and report a verdict. If a capture is piped/redirected into stdin they parse
+that instead, so they also work offline on a saved dump.
+
+| Flag | Description |
+|---|---|
+| `--elock-check` | Report elock health: alive (heartbeat) / lock state / STUCK fault |
+| `--eshifter-check` | Report eshifter health: alive / current gear / telemetry error |
+| `--frontlight-check` | Report frontlight health: alive / brightness |
+| `--rearlight-check` | Report rearlight health: alive / brightness |
+| `--power-pedal-check` | Report power_pedal health: alive (heartbeat) / publishing OD telemetry |
+| `--firmware` | Inventory every ECU present on the bus + its firmware version |
+| `--duration N` | Seconds to listen on the bus for the `*-check`/`--firmware` commands (default: 6) |
 
 ### Examples
 
@@ -84,8 +108,45 @@ Parse a CAN dump file:
 # Turn on rearlight at full brightness
 ./canbus --rearlight 100
 
+# Fake the power_pedal switch_control signal (documented a1=0x0A)
+./canbus --fake-pedal-switch 1
+
+# Fake any power_pedal OD signal by index (e.g. publish a1=0x05 = 0x01F4)
+./canbus --fake-pedal-signal 5 --fake-pedal-data 01F4
+
 # Use a specific CAN interface
 ./canbus --shift-gear 11 --iface vcan0
+
+# Shift to gear 11 and confirm it took effect (sends, then watches the status)
+./canbus --shift-gear 11 --confirm
+
+# Set the frontlight to 60% and confirm the reported brightness reaches it
+./canbus --frontlight 60 --confirm
+
+# Unlock the kicklock and watch the lock state for the result
+./canbus --elock-unlock-confirm
+```
+
+### Live diagnostics
+
+The `*-check` and `--firmware` commands attach to the CAN device directly (Linux
+SocketCAN), or read a piped/saved capture. Bring the bus up first:
+`sudo ip link set can0 up type can bitrate 1000000`.
+
+```bash
+# Health-check a device on the live bus (attaches to can0 for 6s)
+./canbus --elock-check
+./canbus --eshifter-check
+./canbus --frontlight-check --iface can1
+./canbus --rearlight-check --duration 10
+./canbus --power-pedal-check
+
+# Inventory every ECU on the bus and its firmware version
+./canbus --firmware
+
+# The same checks work offline on a saved capture
+./canbus --elock-check    < dumps/startup_from_app.log
+candump -L can0 | ./canbus --firmware
 ```
 
 ## VanMoof SA5 CAN Bus Protocol

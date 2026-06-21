@@ -39,6 +39,11 @@ func main() {
 	eshifterCheck := flag.Bool("eshifter-check", false, "attach to the CAN device (or read piped capture) and report eshifter health (alive / gear / faults)")
 	frontlightCheck := flag.Bool("frontlight-check", false, "attach to the CAN device (or read piped capture) and report frontlight health (alive / brightness)")
 	rearlightCheck := flag.Bool("rearlight-check", false, "attach to the CAN device (or read piped capture) and report rearlight health (alive / brightness)")
+	firmwareScan := flag.Bool("firmware", false, "attach to the CAN device (or read piped capture) and inventory all ECUs present + their firmware")
+	powerPedalCheck := flag.Bool("power-pedal-check", false, "attach to the CAN device (or read piped capture) and report power_pedal health (alive / publishing OD)")
+	fakePedalSignal := flag.Int("fake-pedal-signal", -1, "output cansend command faking a power_pedal OD signal at the given a1 index (e.g. 10 for 0x0A); pair with -fake-pedal-data")
+	fakePedalData := flag.String("fake-pedal-data", "", "hex payload for -fake-pedal-signal (e.g. 01F4); empty = zero-length frame")
+	fakePedalSwitch := flag.Int("fake-pedal-switch", -1, "output cansend command faking the documented power_pedal switch_control signal (a1=0x0A) with the given byte value (0-255)")
 	checkDuration := flag.Int("duration", 6, "seconds to listen on the CAN interface for -elock-check/-eshifter-check (live mode)")
 	frontlight := flag.Int("frontlight", -1, "output cansend command for frontlight brightness (0=off, 1-100=brightness %)")
 	rearlight := flag.Int("rearlight", -1, "output cansend command for rearlight brightness (0=off, 1-100=brightness %)")
@@ -143,6 +148,40 @@ func main() {
 
 	if *rearlightCheck {
 		RunRearlightCheck(*canIface, time.Duration(*checkDuration)*time.Second)
+		return
+	}
+
+	if *firmwareScan {
+		RunFirmwareScan(*canIface, time.Duration(*checkDuration)*time.Second)
+		return
+	}
+
+	if *powerPedalCheck {
+		RunPowerPedalCheck(*canIface, time.Duration(*checkDuration)*time.Second)
+		return
+	}
+
+	if *fakePedalSwitch >= 0 {
+		if *fakePedalSwitch > 255 {
+			fmt.Println("Error: -fake-pedal-switch value must be 0-255")
+			os.Exit(1)
+		}
+		PowerPedalFakeSwitch(byte(*fakePedalSwitch), *canIface)
+		return
+	}
+
+	if *fakePedalSignal >= 0 {
+		if *fakePedalSignal > 255 {
+			fmt.Println("Error: -fake-pedal-signal a1 index must be 0-255")
+			os.Exit(1)
+		}
+		data, err := ParseHexPayload(*fakePedalData)
+		if err != nil {
+			fmt.Printf("Error: bad -fake-pedal-data hex: %v\n", err)
+			os.Exit(1)
+		}
+		PowerPedalFakeSignal(byte(*fakePedalSignal), data, *canIface,
+			fmt.Sprintf("power_pedal OD signal a1=0x%02X", byte(*fakePedalSignal)))
 		return
 	}
 

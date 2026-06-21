@@ -1405,6 +1405,24 @@ Tokens also accept a dash-form spelling (e.g. `MOTOR-CONTROL` as well as
 > (0x8D) are the i.MX8 OD routing codes and differ from the on-wire CAN PF=SA
 > values used in the device table at the top of this document.
 
+### OD address structure (on-wire telemetry IDs)
+
+An OD telemetry CAN ID packs four octet fields:
+
+    id  =  a0<<21 | a1<<13 | a2<<5 | class
+    a0    = node      (bits 28:21) — the publishing node
+    a1    = signal    (bits 20:13) — the signal / object index
+    a2    = peer/port (bits 12:5)  — peer node / port (0x82 power, 0x08 broadcast, self, …)
+    class = sub-type  (bits 4:0)   — message class / sub-type
+
+Verified against the documented signals (battery `0x14811040` → a0=0xA4 a1=0x08
+a2=0x82; power_pedal switch `0x14415040` → a0=0xA2 a1=0x0A a2=0x82). The decoder
+annotates every recognised OD frame (both in the main dump and the `*-check`
+commands) with this breakdown, e.g.
+
+    OD a0=0x87(logging) a1=0x88 a2=0xC2(eshifter) class=0x02   # eshifter log record -> logging node
+    OD a0=0xA2(power_pedal) a1=0x0A a2=0x82(power) class=0x10   # power_switch_control_init
+
 ## Battery Primary (Node 0xA4) — OD Telemetry
 
 The battery pack publishes a contiguous run of OD signals on the main bus
@@ -1460,6 +1478,44 @@ The two `0x14E232xx` frames are raw (sent via `cansend`, not the OD path).
 | rear-carrier query | 0xC3 | 0x80 | `0x1870F040` | — |
 
 The whole battery/power bus uses `a2 = 0x82`.
+
+## Power-Pedal (Node 0xA2) — OD Telemetry & Bench Tooling
+
+power_pedal is the pedal-assist / torque + cadence sensor (PF=SA=0xA2, PS=0x92).
+It is alive when its heartbeat `0x01111440` is on the bus, and it publishes OD
+signals on node `0xA2`.
+
+**OD telemetry publish format** (verified): a power_pedal OD signal at index `a1`
+is published on
+
+    CAN ID = 0x14401040 | (a1 << 13)        (a0 = 0xA2, a2 = 0x82, port form 0x1040)
+
+This matches the one named power_pedal OD signal in the i.MX8 `vm` registry,
+`power_pedal_power_switch_control_init` (`a1 = 0x0A` → `0x14415040`), and the same
+`a0<<21 | a1<<13 | 0x1040` shape used by the battery OD telemetry above.
+
+| Signal | a1 | CAN ID | Notes |
+|---|---|---|---|
+| switch_control_init | 0x0A | `0x14415040` | documented (vm registry); polled, 1 byte |
+| self / identity | — | `0x14403440` | class-0x3 identity (different low-bits form) |
+| (idle telemetry) | 0x03 | `0x14407440` | class-0x3 frame seen on a locked bus, 1 byte `00` |
+
+**Torque / cadence (pedal_rpm): not pinned.** The specific OD signal indices for
+torque and cadence are not documented and not present in the captures (all dumps
+were taken locked = no pedaling, so power_pedal emits only its heartbeat + the
+class-0x3 identity/idle frames above). The sub-ECU firmware keeps its signal name
+strings off-image and creates its tasks via `xTaskCreate`; the semantic
+name→signal map lives in the i.MX8 `ride` service (`ride/info/pedal_rpm` exists as
+an MQTT topic). Pinning them needs the `ride` binary or a capture taken while
+pedaling — until then they are injected via the generic index path, not fabricated.
+
+**Bench tooling** (the tool prints `cansend`/`candump`; it does not write the bus):
+
+| Command | Effect |
+|---|---|
+| `--power-pedal-check` | alive (heartbeat) + publishing-OD verdict over a live attach or piped dump |
+| `--fake-pedal-switch N` | `cansend` for the documented switch signal (`a1=0x0A`, byte N) |
+| `--fake-pedal-signal A1 --fake-pedal-data HEX` | `cansend` for any power_pedal OD signal index (torque/cadence/other once the index is known) |
 
 ## Peripheral OTA over CAN (page-CRC flash)
 
