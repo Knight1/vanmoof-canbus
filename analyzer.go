@@ -121,6 +121,11 @@ func analyzeRawFrame(frame *CANFrame, verbose bool) bool {
 		fmt.Printf("   Protocol: %s\n", strings.Join(info.Annotations, ", "))
 	}
 
+	// Object-Dictionary address breakdown (a0 node / a1 signal / a2 peer / class)
+	if od := FormatODAddress(frame.ID); od != "" {
+		fmt.Printf("   %s\n", od)
+	}
+
 	// Try CBOR decode of full frame data
 	if item, ok := tryRawCBORDecode(frame.Data); ok {
 		fmt.Printf("   CBOR: %s\n", formatCBORInline(item))
